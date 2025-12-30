@@ -731,6 +731,26 @@ impl eframe::App for App {
 			.resizable(true)
 			.show(ctx, |ui| {
 				if let Some(scene) = self.get_active_scene() {
+					if ui.ctx().memory(|memory| memory.focused().is_none()) {
+						if ui.input_mut(|input| {
+							input.consume_key(egui::Modifiers::NONE, egui::Key::Space)
+						}) {
+							scene.playing = !scene.playing;
+						}
+
+						if ui.input_mut(|input| {
+							input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft)
+						}) {
+							scene.current_time -= 1.0;
+						}
+
+						if ui.input_mut(|input| {
+							input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight)
+						}) {
+							scene.current_time += 1.0;
+						}
+					}
+
 					ui.checkbox(&mut scene.playing, "Playing");
 					ui.checkbox(&mut scene.display_placeholders, "Display placeholders");
 					ui.checkbox(&mut scene.centered, "Centered");
