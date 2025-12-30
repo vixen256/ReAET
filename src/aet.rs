@@ -453,13 +453,14 @@ impl AetSceneNode {
 			if let Some(video) = &mut selected.video {
 				translation[0] += video.anchor_x.interpolate(frame) as f64;
 				translation[1] += video.anchor_y.interpolate(frame) as f64;
+				translation[1] = -translation[1] + self.height as f64;
 
 				self.gizmo.update_config(GizmoConfig {
 					projection_matrix: glam::DMat4::from_cols_array_2d(&[
 						[2.0 / self.width as f64, 0.0, 0.0, 0.0],
-						[0.0, -2.0 / self.height as f64, 0.0, 0.0],
+						[0.0, 2.0 / self.height as f64, 0.0, 0.0],
 						[0.0, 0.0, 1.0, 0.0],
-						[-1.0, 1.0, 0.0, 1.0],
+						[-1.0, -1.0, 0.0, 1.0],
 					])
 					.into(),
 					viewport: rect,
@@ -468,6 +469,11 @@ impl AetSceneNode {
 						| GizmoMode::TranslateXY
 						| GizmoMode::RotateZ,
 					snapping: true,
+					snap_distance: 5.0,
+					visuals: GizmoVisuals {
+						inactive_alpha: 1.0,
+						..Default::default()
+					},
 					..Default::default()
 				});
 
@@ -504,7 +510,7 @@ impl AetSceneNode {
 								});
 							}
 							for key in &mut video.pos_y.keys {
-								key.value += delta.y as f32;
+								key.value += -delta.y as f32;
 							}
 						}
 						GizmoResult::Rotation {
@@ -523,7 +529,7 @@ impl AetSceneNode {
 								}
 
 								for key in &mut video.rot_z.keys {
-									key.value += delta.to_degrees() as f32;
+									key.value -= delta.to_degrees() as f32;
 									if key.value.is_sign_negative() {
 										key.value += 360.0;
 									}

@@ -3,8 +3,8 @@ name: Build
 on: [push, pull_request]
 
 jobs:
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
+  build:
+    name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     strategy:
@@ -21,7 +21,7 @@ jobs:
           rustup override set nightly
           cargo build --release
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.os }}
-          path: target/release/ReAET
+          name: ReAET-${{ matrix.os }}
+          path: target/release/ReAET${{ matrix.os == 'windows-latest' && '.exe' || '' }}
