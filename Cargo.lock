@@ -657,7 +657,8 @@ dependencies = [
 [[package]]
 name = "directxtex"
 version = "1.3.0"
-source = "git+https://github.com/vixen256/directxtex-rs#8d684fdff0d616db366e74b9a1c9c97bc176f85c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f0cea4cfe7ef3eeeae77cbbe6c8eddb7e518b1af877ca788b7a9d4fde45e658"
 dependencies = [
  "bitflags 2.10.0",
  "cc",
@@ -1604,7 +1605,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 [[package]]
 name = "kkdlib"
 version = "0.1.0"
-source = "git+https://github.com/vixen256/KKdLib-sys#dfe062da623ff84497bf1485250f19617698060b"
+source = "git+https://github.com/vixen256/KKdLib-sys#0c3954ccce2294decab42a57a7e608b6f2504dcf"
 dependencies = [
  "bitfields",
  "bitflags 2.10.0",
