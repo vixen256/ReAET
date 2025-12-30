@@ -527,6 +527,21 @@ impl App {
 	}
 }
 
+const SAVE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND,
+	logical_key: egui::Key::S,
+};
+
+const UNDO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND,
+	logical_key: egui::Key::Z,
+};
+
+const REDO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND,
+	logical_key: egui::Key::Y,
+};
+
 impl eframe::App for App {
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 		ctx.input_mut(|input| {
@@ -539,14 +554,14 @@ impl eframe::App for App {
 				}
 			}
 
-			if input.consume_key(egui::Modifiers::COMMAND, egui::Key::S) {
+			if input.consume_shortcut(&SAVE_SHORTCUT) {
 				self.save_files();
 			}
 
 			if let Some(undoer) = &mut self.undoer
 				&& let Some(aet_set) = &mut self.aet_set
 			{
-				if input.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)
+				if input.consume_shortcut(&UNDO_SHORTCUT)
 					&& let Some(undone) = undoer.undo(aet_set)
 				{
 					aet_set.update_from(undone);
@@ -560,7 +575,7 @@ impl eframe::App for App {
 					}
 				}
 
-				if input.consume_key(egui::Modifiers::COMMAND, egui::Key::Y)
+				if input.consume_shortcut(&REDO_SHORTCUT)
 					&& let Some(redone) = undoer.redo(aet_set)
 				{
 					aet_set.update_from(redone);
@@ -600,7 +615,13 @@ impl eframe::App for App {
 						ui.close();
 					}
 
-					if ui.button("Save (C+S)").clicked() {
+					if ui
+						.add(
+							egui::Button::new("Save")
+								.shortcut_text(ctx.format_shortcut(&SAVE_SHORTCUT)),
+						)
+						.clicked()
+					{
 						self.save_files();
 					}
 				});
@@ -610,7 +631,11 @@ impl eframe::App for App {
 						&& let Some(aet_set) = &mut self.aet_set
 					{
 						if ui
-							.add_enabled(undoer.has_undo(aet_set), egui::Button::new("Undo (C+Z)"))
+							.add_enabled(
+								undoer.has_undo(aet_set),
+								egui::Button::new("Undo")
+									.shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
+							)
 							.clicked() && let Some(undone) = undoer.undo(aet_set)
 						{
 							aet_set.update_from(undone);
@@ -625,7 +650,11 @@ impl eframe::App for App {
 						}
 
 						if ui
-							.add_enabled(undoer.has_redo(aet_set), egui::Button::new("Redo (C+Y)"))
+							.add_enabled(
+								undoer.has_redo(aet_set),
+								egui::Button::new("Redo")
+									.shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
+							)
 							.clicked() && let Some(redone) = undoer.redo(aet_set)
 						{
 							aet_set.update_from(redone);
@@ -639,8 +668,16 @@ impl eframe::App for App {
 							}
 						}
 					} else {
-						ui.add_enabled(false, egui::Button::new("Undo (C+Z)"));
-						ui.add_enabled(false, egui::Button::new("Redo (C+Y)"));
+						ui.add_enabled(
+							false,
+							egui::Button::new("Undo")
+								.shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
+						);
+						ui.add_enabled(
+							false,
+							egui::Button::new("Redo")
+								.shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
+						);
 					}
 				});
 			});
