@@ -1,5 +1,6 @@
 use crate::*;
 use eframe::egui;
+use eframe::egui::NumExt;
 use regex::Regex;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -107,55 +108,164 @@ impl App {
 	}
 }
 
+// Custom Selectable Label type Collapsing Header
+pub fn collapsing_selectable_label<R>(
+	ui: &mut egui::Ui,
+	label: impl Into<egui::WidgetText>,
+	id: impl std::hash::Hash,
+	selected: bool,
+	add_body: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::CollapsingResponse<R> {
+	ui.vertical(|ui| {
+		// HEADER
+		let id = ui.make_persistent_id(egui::Id::new(id));
+		let button_padding = ui.spacing().button_padding;
+
+		let available = ui.available_rect_before_wrap();
+		let text_pos = available.min + egui::vec2(ui.spacing().indent, 0.0);
+		let wrap_width = available.right() - text_pos.x;
+		let galley = label.into().into_galley(
+			ui,
+			Some(egui::TextWrapMode::Extend),
+			wrap_width,
+			egui::TextStyle::Button,
+		);
+		let text_max_x = text_pos.x + galley.size().x;
+
+		let mut desired_width = text_max_x + button_padding.x - available.left();
+		if ui.visuals().collapsing_header_frame {
+			desired_width = desired_width.max(available.width()); // fill full width
+		}
+
+		let mut desired_size = egui::vec2(desired_width, galley.size().y + 2.0 * button_padding.y);
+		desired_size = desired_size.at_least(ui.spacing().interact_size);
+		let (_, rect) = ui.allocate_space(desired_size);
+
+		let mut header_response = ui.interact(rect, id, egui::Sense::click());
+		let text_pos = egui::pos2(
+			text_pos.x,
+			header_response.rect.center().y - galley.size().y / 2.0,
+		);
+
+		let mut state =
+			egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+
+		header_response.widget_info(|| {
+			egui::WidgetInfo::labeled(
+				egui::WidgetType::CollapsingHeader,
+				ui.is_enabled(),
+				galley.text(),
+			)
+		});
+
+		let openness = state.openness(ui.ctx());
+
+		if ui.is_rect_visible(rect) {
+			let visuals = ui.style().interact_selectable(&header_response, selected);
+
+			if selected || (header_response.hovered() || header_response.has_focus()) {
+				let rect = rect.expand(visuals.expansion);
+
+				ui.painter().rect(
+					rect,
+					visuals.corner_radius,
+					visuals.bg_fill,
+					visuals.bg_stroke,
+					egui::StrokeKind::Inside,
+				);
+			}
+
+			{
+				let (mut icon_rect, _) = ui.spacing().icon_rectangles(header_response.rect);
+				icon_rect.set_center(egui::pos2(
+					header_response.rect.left() + ui.spacing().indent / 2.0,
+					header_response.rect.center().y,
+				));
+				let icon_response = header_response.clone().with_new_rect(icon_rect);
+				egui::collapsing_header::paint_default_icon(ui, openness, &icon_response);
+
+				if ui
+					.interact(icon_rect, id.with("Icon"), egui::Sense::click())
+					.clicked()
+				{
+					state.toggle(ui);
+					header_response.mark_changed();
+				}
+			}
+
+			ui.painter().galley(text_pos, galley, visuals.text_color());
+		}
+
+		let ret_response = state.show_body_indented(&header_response, ui, add_body);
+
+		if let Some(ret_response) = ret_response {
+			egui::CollapsingResponse {
+				header_response,
+				body_response: Some(ret_response.response),
+				body_returned: Some(ret_response.inner),
+				openness,
+			}
+		} else {
+			egui::CollapsingResponse {
+				header_response,
+				body_response: None,
+				body_returned: None,
+				openness,
+			}
+		}
+	})
+	.inner
+}
+
 fn show_node(
 	ui: &mut egui::Ui,
 	node: &mut dyn TreeNode,
 	index: usize,
 	path: &[usize],
+	selected: &mut Vec<usize>,
 	frame: &mut eframe::Frame,
-) -> Option<Vec<usize>> {
+) {
 	let mut path = path.to_vec();
 	path.push(index);
 
 	if node.has_children() {
-		let collapsing = ui.horizontal(|ui| {
-			node.label_sameline(ui);
+		let resp = ui
+			.horizontal(|ui| {
+				node.label_sameline(ui);
 
-			egui::CollapsingHeader::new(node.label())
-				.id_salt(&path)
-				.show(ui, |ui| {
-					let mut outer_selected = None;
-					let mut index = 0;
-					node.display_children(&mut |child| {
-						let selected = show_node(ui, child, index, &path, frame);
-						if selected.is_some() {
-							outer_selected = selected;
-						}
-						index += 1;
-					});
-					outer_selected
-				})
-		});
+				collapsing_selectable_label(
+					ui,
+					node.label().to_string(),
+					&path,
+					path == *selected,
+					|ui| {
+						let mut index = 0;
+						node.display_children(&mut |child| {
+							show_node(ui, child, index, &path, selected, frame);
+							index += 1;
+						});
+					},
+				)
+			})
+			.inner
+			.header_response;
 
 		if node.has_context_menu() {
-			let menu = egui::Popup::context_menu(&collapsing.inner.header_response)
-				.show(|ui| node.display_ctx_menu(ui));
+			let menu = egui::Popup::context_menu(&resp).show(|ui| node.display_ctx_menu(ui));
 			if menu.is_some() {
 				node.selected(frame);
-				return Some(path);
+				*selected = path.clone();
 			}
 		}
 
-		if collapsing.inner.header_response.clicked() {
+		if resp.clicked() {
 			node.selected(frame);
-			Some(path)
-		} else {
-			collapsing.inner.body_returned.unwrap_or(None)
+			*selected = path;
 		}
 	} else {
 		let resp = ui.horizontal(|ui| {
 			node.label_sameline(ui);
-			ui.label(node.label())
+			ui.selectable_label(path == *selected, node.label())
 		});
 
 		if node.has_context_menu() {
@@ -163,15 +273,13 @@ fn show_node(
 
 			if menu.is_some() {
 				node.selected(frame);
-				return Some(path);
+				*selected = path.clone();
 			}
 		}
 
 		if resp.inner.clicked() {
 			node.selected(frame);
-			Some(path)
-		} else {
-			None
+			*selected = path;
 		}
 	}
 }
@@ -463,6 +571,11 @@ impl eframe::App for App {
 							{
 								show_node_opts(ui, node, 1, 0, &[], &self.selected);
 							}
+							if let Some(node) = &mut self.spr_db
+								&& self.selected[0] == 2
+							{
+								show_node_opts(ui, node, 2, 0, &[], &self.selected);
+							}
 
 							ui.take_available_space();
 						});
@@ -470,14 +583,13 @@ impl eframe::App for App {
 
 				egui::ScrollArea::vertical().show(ui, |ui| {
 					if let Some(node) = &mut self.aet_set {
-						if let Some(selected) = show_node(ui, node, 0, &[], frame) {
-							self.selected = selected;
-						}
+						show_node(ui, node, 0, &[], &mut self.selected, frame);
 					}
 					if let Some(node) = &mut self.sprite_set {
-						if let Some(selected) = show_node(ui, node, 1, &[], frame) {
-							self.selected = selected;
-						}
+						show_node(ui, node, 1, &[], &mut self.selected, frame);
+					}
+					if let Some(node) = &mut self.spr_db {
+						show_node(ui, node, 2, &[], &mut self.selected, frame);
 					}
 
 					ui.take_available_space();
