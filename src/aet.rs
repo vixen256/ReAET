@@ -983,7 +983,7 @@ impl AetCompNode {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum CurveType {
 	// Audio
 	VolumeL,
@@ -1536,94 +1536,185 @@ impl AetLayerNode {
 		egui::SidePanel::left("CurveSelector")
 			.resizable(true)
 			.show_inside(ui, |ui| {
-				if self.audio.is_some() {
-					if ui.button("Volume L").clicked() {
-						*selected_curve = Some(CurveType::VolumeL);
-						self.selected_key = 0;
+				egui::ScrollArea::vertical().show(ui, |ui| {
+					if self.audio.is_some() {
+						if ui
+							.selectable_label(
+								*selected_curve == Some(CurveType::VolumeL),
+								"Volume L",
+							)
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::VolumeL);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(
+								*selected_curve == Some(CurveType::VolumeR),
+								"Volume R",
+							)
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::VolumeR);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(*selected_curve == Some(CurveType::PanL), "Pan L")
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::PanL);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(*selected_curve == Some(CurveType::PanR), "Pan R")
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::PanR);
+							self.selected_key = 0;
+						}
 					}
-					if ui.button("Volume R").clicked() {
-						*selected_curve = Some(CurveType::VolumeR);
-						self.selected_key = 0;
-					}
-					if ui.button("Pan L").clicked() {
-						*selected_curve = Some(CurveType::PanL);
-						self.selected_key = 0;
-					}
-					if ui.button("Pan R").clicked() {
-						*selected_curve = Some(CurveType::PanR);
-						self.selected_key = 0;
-					}
-				}
 
-				if self.video.is_some() {
-					let has_3d = self.video.as_ref().unwrap()._3d.is_some();
-					if ui.button("Anchor X").clicked() {
-						*selected_curve = Some(CurveType::AnchorX);
-						self.selected_key = 0;
+					if self.video.is_some() {
+						let has_3d = self.video.as_ref().unwrap()._3d.is_some();
+						if ui
+							.selectable_label(
+								*selected_curve == Some(CurveType::AnchorX),
+								"Anchor X",
+							)
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::AnchorX);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(
+								*selected_curve == Some(CurveType::AnchorY),
+								"Anchor Y",
+							)
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::AnchorY);
+							self.selected_key = 0;
+						}
+						if has_3d
+							&& ui
+								.selectable_label(
+									*selected_curve == Some(CurveType::AnchorZ),
+									"Anchor Z",
+								)
+								.clicked()
+						{
+							*selected_curve = Some(CurveType::AnchorZ);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(*selected_curve == Some(CurveType::PosX), "Pos X")
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::PosX);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(*selected_curve == Some(CurveType::PosY), "Pos Y")
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::PosY);
+							self.selected_key = 0;
+						}
+						if has_3d
+							&& ui
+								.selectable_label(*selected_curve == Some(CurveType::PosZ), "Pos Z")
+								.clicked()
+						{
+							*selected_curve = Some(CurveType::PosZ);
+							self.selected_key = 0;
+						}
+						if has_3d
+							&& ui
+								.selectable_label(*selected_curve == Some(CurveType::DirX), "Dir X")
+								.clicked()
+						{
+							*selected_curve = Some(CurveType::DirX);
+							self.selected_key = 0;
+						}
+						if has_3d
+							&& ui
+								.selectable_label(*selected_curve == Some(CurveType::DirY), "Dir Y")
+								.clicked()
+						{
+							*selected_curve = Some(CurveType::DirY);
+							self.selected_key = 0;
+						}
+						if has_3d
+							&& ui
+								.selectable_label(*selected_curve == Some(CurveType::DirZ), "Dir Z")
+								.clicked()
+						{
+							*selected_curve = Some(CurveType::DirZ);
+							self.selected_key = 0;
+						}
+						if has_3d
+							&& ui
+								.selectable_label(*selected_curve == Some(CurveType::RotX), "Rot X")
+								.clicked()
+						{
+							*selected_curve = Some(CurveType::RotX);
+							self.selected_key = 0;
+						}
+						if has_3d
+							&& ui
+								.selectable_label(*selected_curve == Some(CurveType::RotY), "Rot Y")
+								.clicked()
+						{
+							*selected_curve = Some(CurveType::RotY);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(*selected_curve == Some(CurveType::RotZ), "Rot Z")
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::RotZ);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(*selected_curve == Some(CurveType::ScaleX), "Scale X")
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::ScaleX);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(*selected_curve == Some(CurveType::ScaleY), "Scale Y")
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::ScaleY);
+							self.selected_key = 0;
+						}
+						if has_3d
+							&& ui
+								.selectable_label(
+									*selected_curve == Some(CurveType::ScaleZ),
+									"Scale Z",
+								)
+								.clicked()
+						{
+							*selected_curve = Some(CurveType::ScaleZ);
+							self.selected_key = 0;
+						}
+						if ui
+							.selectable_label(
+								*selected_curve == Some(CurveType::Opacity),
+								"Opacity",
+							)
+							.clicked()
+						{
+							*selected_curve = Some(CurveType::Opacity);
+							self.selected_key = 0;
+						}
 					}
-					if ui.button("Anchor Y").clicked() {
-						*selected_curve = Some(CurveType::AnchorY);
-						self.selected_key = 0;
-					}
-					if has_3d && ui.button("Anchor Z").clicked() {
-						*selected_curve = Some(CurveType::AnchorZ);
-						self.selected_key = 0;
-					}
-					if ui.button("Pos X").clicked() {
-						*selected_curve = Some(CurveType::PosX);
-						self.selected_key = 0;
-					}
-					if ui.button("Pos Y").clicked() {
-						*selected_curve = Some(CurveType::PosY);
-						self.selected_key = 0;
-					}
-					if has_3d && ui.button("Pos Z").clicked() {
-						*selected_curve = Some(CurveType::PosZ);
-						self.selected_key = 0;
-					}
-					if has_3d && ui.button("Dir X").clicked() {
-						*selected_curve = Some(CurveType::DirX);
-						self.selected_key = 0;
-					}
-					if has_3d && ui.button("Dir Y").clicked() {
-						*selected_curve = Some(CurveType::DirY);
-						self.selected_key = 0;
-					}
-					if has_3d && ui.button("Dir Z").clicked() {
-						*selected_curve = Some(CurveType::DirZ);
-						self.selected_key = 0;
-					}
-					if has_3d && ui.button("Rot X").clicked() {
-						*selected_curve = Some(CurveType::RotX);
-						self.selected_key = 0;
-					}
-					if has_3d && ui.button("Rot Y").clicked() {
-						*selected_curve = Some(CurveType::RotY);
-						self.selected_key = 0;
-					}
-					if ui.button("Rot Z").clicked() {
-						*selected_curve = Some(CurveType::RotZ);
-						self.selected_key = 0;
-					}
-					if ui.button("Scale X").clicked() {
-						*selected_curve = Some(CurveType::ScaleX);
-						self.selected_key = 0;
-					}
-					if ui.button("Scale Y").clicked() {
-						*selected_curve = Some(CurveType::ScaleY);
-						self.selected_key = 0;
-					}
-					if has_3d && ui.button("Scale Z").clicked() {
-						*selected_curve = Some(CurveType::ScaleZ);
-						self.selected_key = 0;
-					}
-					if ui.button("Opacity").clicked() {
-						*selected_curve = Some(CurveType::Opacity);
-						self.selected_key = 0;
-					}
-				}
 
-				ui.take_available_space();
+					ui.take_available_space();
+				});
 			});
 
 		let Some(selected_curve) = &selected_curve else {
