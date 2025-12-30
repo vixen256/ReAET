@@ -1,6 +1,7 @@
 use crate::*;
 use eframe::egui;
 use eframe::egui::NumExt;
+use eframe::egui::util::undoer::Undoer;
 use regex::Regex;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -65,6 +66,8 @@ pub struct App {
 	spr_db_filepath: Option<PathBuf>,
 	selected: Vec<usize>,
 	file_dialog: egui_file_dialog::FileDialog,
+
+	undoer: Option<Undoer<aet::AetSetNode>>,
 }
 
 impl App {
@@ -104,6 +107,7 @@ impl App {
 			spr_db_filepath: None,
 			selected: Vec::new(),
 			file_dialog,
+			undoer: None,
 		})
 	}
 }
@@ -117,7 +121,6 @@ pub fn collapsing_selectable_label<R>(
 	add_body: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::CollapsingResponse<R> {
 	ui.vertical(|ui| {
-		// HEADER
 		let id = ui.make_persistent_id(egui::Id::new(id));
 		let button_padding = ui.spacing().button_padding;
 
@@ -176,7 +179,7 @@ pub fn collapsing_selectable_label<R>(
 			}
 
 			{
-				let (mut icon_rect, _) = ui.spacing().icon_rectangles(header_response.rect);
+				let (_, mut icon_rect) = ui.spacing().icon_rectangles(header_response.rect);
 				icon_rect.set_center(egui::pos2(
 					header_response.rect.left() + ui.spacing().indent / 2.0,
 					header_response.rect.center().y,
@@ -485,12 +488,48 @@ impl App {
 				}
 			}
 		}
+
+		if let Some(aet_set) = &self.aet_set {
+			let mut undoer = Undoer::default();
+			undoer.add_undo(aet_set);
+			self.undoer = Some(undoer);
+		}
+	}
+
+	fn save_files(&self) {
+		if let Some(aet_set) = &self.aet_set
+			&& let Some(path) = &self.aet_set_filepath
+		{
+			let data = aet_set.raw_data();
+			_ = std::fs::write(path, &data);
+		}
+
+		if let Some(sprite_set) = &self.sprite_set
+			&& let Some(path) = &self.sprite_set_filepath
+		{
+			let data = sprite_set.raw_data();
+			if path.extension() == Some(std::ffi::OsString::from("farc").as_os_str()) {
+				let mut farc = kkdlib::farc::Farc::new();
+				farc.add_file_data(&sprite_set.name, &data);
+				let data = farc.to_buf().unwrap_or_default();
+				_ = std::fs::write(path, &data);
+			} else {
+				_ = std::fs::write(path, &data);
+			}
+		}
+
+		if let Some(spr_db) = &self.spr_db
+			&& let Some(path) = &self.spr_db_filepath
+		{
+			let data = spr_db.raw_data();
+			_ = std::fs::write(path, &data);
+		}
 	}
 }
 
 impl eframe::App for App {
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-		ctx.input(|input| {
+		ctx.input_mut(|input| {
 			for file in &input.raw.dropped_files {
 				if let Some(path) = &file.path
 					&& path.is_file()
@@ -499,7 +538,33 @@ impl eframe::App for App {
 					self.set_file(frame, path, &data);
 				}
 			}
+
+			if input.consume_key(egui::Modifiers::COMMAND, egui::Key::S) {
+				self.save_files();
+			}
+
+			if let Some(undoer) = &mut self.undoer
+				&& let Some(aet_set) = &mut self.aet_set
+			{
+				if input.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)
+					&& let Some(undone) = undoer.undo(aet_set)
+				{
+					aet_set.update_from(undone);
+				}
+
+				if input.consume_key(egui::Modifiers::COMMAND, egui::Key::Y)
+					&& let Some(redone) = undoer.redo(aet_set)
+				{
+					aet_set.update_from(redone);
+				}
+			}
 		});
+
+		if let Some(aet_set) = &self.aet_set
+			&& let Some(undoer) = &mut self.undoer
+		{
+			undoer.feed_state(ctx.input(|input| input.time), aet_set);
+		}
 
 		self.file_dialog
 			.update_with_right_panel_ui(ctx, &mut file_dialog_right_panel);
@@ -519,38 +584,33 @@ impl eframe::App for App {
 						ui.close();
 					}
 
-					if ui.button("Save").clicked() {
-						if let Some(aet_set) = &self.aet_set
-							&& let Some(path) = &self.aet_set_filepath
-						{
-							let data = aet_set.raw_data();
-							_ = std::fs::write(path, &data);
-						}
-
-						if let Some(sprite_set) = &self.sprite_set
-							&& let Some(path) = &self.sprite_set_filepath
-						{
-							let data = sprite_set.raw_data();
-							if path.extension()
-								== Some(std::ffi::OsString::from("farc").as_os_str())
-							{
-								let mut farc = kkdlib::farc::Farc::new();
-								farc.add_file_data(&sprite_set.name, &data);
-								let data = farc.to_buf().unwrap_or_default();
-								_ = std::fs::write(path, &data);
-							} else {
-								_ = std::fs::write(path, &data);
-							}
-						}
-
-						if let Some(spr_db) = &self.spr_db
-							&& let Some(path) = &self.spr_db_filepath
-						{
-							let data = spr_db.raw_data();
-							_ = std::fs::write(path, &data);
-						}
+					if ui.button("Save (C+S)").clicked() {
+						self.save_files();
 					}
-				})
+				});
+
+				ui.menu_button("Edit", |ui| {
+					if let Some(undoer) = &mut self.undoer
+						&& let Some(aet_set) = &mut self.aet_set
+					{
+						if ui
+							.add_enabled(undoer.has_undo(aet_set), egui::Button::new("Undo (C+Z)"))
+							.clicked() && let Some(undone) = undoer.undo(aet_set)
+						{
+							aet_set.update_from(undone);
+						}
+
+						if ui
+							.add_enabled(undoer.has_redo(aet_set), egui::Button::new("Redo (C+Y)"))
+							.clicked() && let Some(redone) = undoer.redo(aet_set)
+						{
+							aet_set.update_from(redone);
+						}
+					} else {
+						ui.add_enabled(false, egui::Button::new("Undo (C+Z)"));
+						ui.add_enabled(false, egui::Button::new("Redo (C+Y)"));
+					}
+				});
 			});
 		});
 

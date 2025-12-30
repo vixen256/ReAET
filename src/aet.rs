@@ -128,6 +128,7 @@ impl Mul<Mat4> for Mat4 {
 	}
 }
 
+#[derive(Clone, PartialEq)]
 pub struct AetSetNode {
 	pub name: String,
 	pub modern: bool,
@@ -262,8 +263,24 @@ impl AetSetNode {
 			scenes,
 		}
 	}
+
+	pub fn update_from(&mut self, other: &Self) {
+		self.name = other.name.clone();
+		self.modern = other.modern;
+		self.big_endian = other.big_endian;
+		self.is_x = other.is_x;
+
+		if self.scenes.len() == other.scenes.len() {
+			for (a, b) in self.scenes.iter_mut().zip(other.scenes.iter()) {
+				a.update_from(b);
+			}
+		} else {
+			self.scenes = other.scenes.clone();
+		}
+	}
 }
 
+#[derive(Clone)]
 pub struct AetSceneNode {
 	pub name: String,
 	pub start_time: f32,
@@ -282,6 +299,20 @@ pub struct AetSceneNode {
 
 	pub selected_curve: Option<CurveType>,
 	pub gizmo: Gizmo,
+}
+
+impl PartialEq for AetSceneNode {
+	fn eq(&self, other: &Self) -> bool {
+		self.name == other.name
+			&& self.start_time == other.start_time
+			&& self.end_time == other.end_time
+			&& self.fps == other.fps
+			&& self.color == other.color
+			&& self.width == other.width
+			&& self.height == other.height
+			&& self.camera == other.camera
+			&& self.root == other.root
+	}
 }
 
 impl TreeNode for AetSceneNode {
@@ -409,6 +440,35 @@ impl AetSceneNode {
 				translation[1] = self.height as f64 / 2.0;
 			}
 
+			let layer = &mut self.root.layers[selected[2]];
+			if let Some(video) = &layer.video {
+				translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
+				translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
+				if let Some(_3d) = &video._3d {
+					translation[2] -= scale[2] * _3d.pos_z.interpolate(frame) as f64;
+				}
+				scale[0] *= video.scale_x.interpolate(frame) as f64;
+				scale[1] *= video.scale_y.interpolate(frame) as f64;
+				if let Some(_3d) = &video._3d {
+					scale[2] *= _3d.scale_z.interpolate(frame) as f64;
+				}
+				translation[0] -= scale[0] * video.anchor_x.interpolate(frame) as f64;
+				translation[1] -= scale[1] * video.anchor_y.interpolate(frame) as f64;
+				if let Some(_3d) = &video._3d {
+					translation[2] -= scale[2] * _3d.anchor_z.interpolate(frame) as f64;
+				}
+
+				if let Some(_3d) = &video._3d {
+					rotation[0] += _3d.dir_x.interpolate(frame).to_radians() as f64;
+					rotation[1] += _3d.dir_y.interpolate(frame).to_radians() as f64;
+					rotation[2] += _3d.dir_z.interpolate(frame).to_radians() as f64;
+
+					rotation[0] += _3d.rot_x.interpolate(frame).to_radians() as f64;
+					rotation[1] += _3d.rot_y.interpolate(frame).to_radians() as f64;
+				}
+				rotation[2] += video.rot_z.interpolate(frame).to_radians() as f64;
+			}
+
 			let selected =
 				selected
 					.iter()
@@ -470,10 +530,6 @@ impl AetSceneNode {
 						| GizmoMode::RotateZ,
 					snapping: true,
 					snap_distance: 5.0,
-					visuals: GizmoVisuals {
-						inactive_alpha: 1.0,
-						..Default::default()
-					},
 					..Default::default()
 				});
 
@@ -544,7 +600,28 @@ impl AetSceneNode {
 	}
 }
 
-#[derive(Clone)]
+impl AetSceneNode {
+	pub fn update_from(&mut self, other: &Self) {
+		self.name = other.name.clone();
+		self.start_time = other.start_time;
+		self.end_time = other.end_time;
+		self.fps = other.fps;
+		self.color = other.color;
+		self.width = other.width;
+		self.height = other.height;
+		self.camera = other.camera.clone();
+
+		if self.root.layers.len() == other.root.layers.len() {
+			for (a, b) in self.root.layers.iter_mut().zip(other.root.layers.iter()) {
+				a.update_from(b);
+			}
+		} else {
+			self.root = other.root.clone();
+		}
+	}
+}
+
+#[derive(Clone, PartialEq)]
 pub struct AetCompNode {
 	pub layers: Vec<AetLayerNode>,
 }
@@ -954,6 +1031,22 @@ pub struct AetLayerNode {
 
 	pub want_deletion: bool,
 	pub want_duplicate: bool,
+}
+
+impl PartialEq for AetLayerNode {
+	fn eq(&self, other: &Self) -> bool {
+		self.name == other.name
+			&& self.start_time == other.start_time
+			&& self.end_time == other.end_time
+			&& self.offset_time == other.offset_time
+			&& self.time_scale == other.time_scale
+			&& self.flags == other.flags
+			&& self.quality == other.quality
+			&& self.item == other.item
+			&& self.markers == other.markers
+			&& self.video == other.video
+			&& self.audio == other.audio
+	}
 }
 
 impl TreeNode for AetLayerNode {
@@ -1750,9 +1843,34 @@ impl AetLayerNode {
 			self.selected_key = index;
 		}
 	}
+
+	pub fn update_from(&mut self, other: &Self) {
+		self.name = other.name.clone();
+		self.start_time = other.start_time;
+		self.end_time = other.end_time;
+		self.offset_time = other.offset_time;
+		self.time_scale = other.time_scale;
+		self.flags = other.flags;
+		self.quality = other.quality;
+		self.markers = other.markers.clone();
+		self.video = other.video.clone();
+		self.audio = other.audio.clone();
+		self.audio = other.audio.clone();
+
+		if let AetItemNode::Comp(a) = &mut self.item
+			&& let AetItemNode::Comp(b) = &other.item
+			&& a.layers.len() == b.layers.len()
+		{
+			for (a, b) in a.layers.iter_mut().zip(b.layers.iter()) {
+				a.update_from(b);
+			}
+		} else {
+			self.item = other.item.clone();
+		}
+	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum AetItemNode {
 	None,
 	Video(AetVideoNode),
@@ -1760,7 +1878,7 @@ pub enum AetItemNode {
 	Comp(AetCompNode),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct AetVideoNode {
 	pub color: [u8; 3],
 	pub width: u16,
@@ -1776,7 +1894,19 @@ pub struct AetVideoSourceNode {
 	pub sprite: Option<Rc<Mutex<crate::spr::SpriteInfoNode>>>,
 }
 
-#[derive(Clone)]
+impl PartialEq for AetVideoSourceNode {
+	fn eq(&self, other: &Self) -> bool {
+		if let Some(a) = &self.sprite
+			&& let Some(b) = &other.sprite
+		{
+			Rc::ptr_eq(a, b)
+		} else {
+			self.name == other.name && self.id == other.id
+		}
+	}
+}
+
+#[derive(Clone, PartialEq)]
 pub struct AetAudioNode {
 	pub sound_index: u32,
 }

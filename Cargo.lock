@@ -1605,7 +1605,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 [[package]]
 name = "kkdlib"
 version = "0.1.0"
-source = "git+https://github.com/vixen256/KKdLib-sys#4c119995f2255281e6c9870132b5c2585a34c841"
+source = "git+https://github.com/vixen256/KKdLib-sys#b88a19e50207993370617b72d5438aa57c878000"
 dependencies = [
  "bitfields",
  "bitflags 2.10.0",
@@ -3021,9 +3021,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "syn"
-version = "2.0.111"
+version = "2.0.112"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "390cc9a294ab71bdb1aa2e99d13be9c753cd2d7bd6560c77118597410c4d2e87"
+checksum = "21f182278bf2d2bcb3c88b1b08a37df029d71ce3d3ae26168e3c653b213b99d4"
 dependencies = [
  "proc-macro2",
  "quote",
