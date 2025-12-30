@@ -38,9 +38,7 @@ impl TreeNode for TextureSetNode {
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
 		let old_len = self.children.len();
 		self.children.retain_mut(|tex| {
-			let count = Rc::strong_count(tex);
 			let mut tex = tex.lock().unwrap();
-			tex.can_delete = count == 1;
 			f(&mut *tex);
 			!tex.want_deletion
 		});
@@ -132,7 +130,6 @@ impl TreeNode for TextureSetNode {
 				db_entry: None,
 				exporting: false,
 				error: None,
-				can_delete: false,
 				want_deletion: false,
 			})));
 		}
@@ -187,7 +184,6 @@ impl TextureSetNode {
 						db_entry: None,
 						exporting: false,
 						error: None,
-						can_delete: false,
 						want_deletion: false,
 					}))
 				})
@@ -225,7 +221,6 @@ impl TextureSetNode {
 						db_entry: None,
 						exporting: false,
 						error: None,
-						can_delete: false,
 						want_deletion: false,
 					}))
 				})
@@ -245,7 +240,6 @@ pub struct TextureNode {
 	pub file_dialog: egui_file_dialog::FileDialog,
 	pub exporting: bool,
 	pub error: Option<String>,
-	pub can_delete: bool,
 	pub want_deletion: bool,
 }
 
@@ -366,13 +360,7 @@ impl TreeNode for TextureNode {
 			self.file_dialog.pick_file();
 			self.exporting = false;
 		}
-		if ui
-			.add_enabled(self.can_delete, egui::Button::new("Remove"))
-			.on_disabled_hover_text(
-				"All sprites referencing this texture must be removed before it can be removed",
-			)
-			.clicked()
-		{
+		if ui.button("Remove").clicked() {
 			self.want_deletion = true;
 		}
 	}

@@ -1393,6 +1393,7 @@ impl TreeNode for AetLayerNode {
 								continue;
 							};
 							let db_entry = db_entry.lock().unwrap();
+							source.id = db_entry.id;
 							let sprite_name = sprite.name.clone();
 							let old_selected_sprite = db_entry.id;
 							let mut selected_sprite = db_entry.id;
@@ -1440,6 +1441,8 @@ impl TreeNode for AetLayerNode {
 												.id == selected_sprite
 									})
 									.cloned();
+
+								source.id = selected_sprite;
 							}
 						}
 					}

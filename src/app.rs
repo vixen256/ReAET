@@ -550,12 +550,28 @@ impl eframe::App for App {
 					&& let Some(undone) = undoer.undo(aet_set)
 				{
 					aet_set.update_from(undone);
+
+					if let Some(spr_db) = &self.spr_db
+						&& let Some(spr_set) = &self.sprite_set
+					{
+						for scene in &mut aet_set.scenes {
+							scene.root.update_video_textures(spr_db, spr_set);
+						}
+					}
 				}
 
 				if input.consume_key(egui::Modifiers::COMMAND, egui::Key::Y)
 					&& let Some(redone) = undoer.redo(aet_set)
 				{
 					aet_set.update_from(redone);
+
+					if let Some(spr_db) = &self.spr_db
+						&& let Some(spr_set) = &self.sprite_set
+					{
+						for scene in &mut aet_set.scenes {
+							scene.root.update_video_textures(spr_db, spr_set);
+						}
+					}
 				}
 			}
 		});
@@ -598,6 +614,14 @@ impl eframe::App for App {
 							.clicked() && let Some(undone) = undoer.undo(aet_set)
 						{
 							aet_set.update_from(undone);
+
+							if let Some(spr_db) = &self.spr_db
+								&& let Some(spr_set) = &self.sprite_set
+							{
+								for scene in &mut aet_set.scenes {
+									scene.root.update_video_textures(spr_db, spr_set);
+								}
+							}
 						}
 
 						if ui
@@ -605,6 +629,14 @@ impl eframe::App for App {
 							.clicked() && let Some(redone) = undoer.redo(aet_set)
 						{
 							aet_set.update_from(redone);
+
+							if let Some(spr_db) = &self.spr_db
+								&& let Some(spr_set) = &self.sprite_set
+							{
+								for scene in &mut aet_set.scenes {
+									scene.root.update_video_textures(spr_db, spr_set);
+								}
+							}
 						}
 					} else {
 						ui.add_enabled(false, egui::Button::new("Undo (C+Z)"));

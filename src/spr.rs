@@ -532,9 +532,7 @@ impl TreeNode for SpriteInfosNode {
 
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
 		self.children.lock().unwrap().retain_mut(|spr| {
-			let count = Rc::strong_count(spr);
 			let mut spr = spr.lock().unwrap();
-			spr.can_delete = count == 1;
 			let texid = spr.texture.lock().unwrap().index;
 			spr.info.set_texid(texid);
 			f(&mut *spr);
@@ -577,7 +575,6 @@ impl TreeNode for SpriteInfosNode {
 						file_dialog: egui_file_dialog::FileDialog::new(),
 						exporting: false,
 						error: None,
-						can_delete: false,
 						want_deletion: false,
 					})),
 					texture_names: self.texture_names.clone(),
@@ -585,7 +582,6 @@ impl TreeNode for SpriteInfosNode {
 					db_entry: None,
 					exporting: false,
 					error: None,
-					can_delete: false,
 					want_deletion: false,
 				})));
 		}
@@ -624,7 +620,6 @@ impl SpriteInfosNode {
 							db_entry: None,
 							exporting: false,
 							error: None,
-							can_delete: false,
 							want_deletion: false,
 						}))
 					})
@@ -645,7 +640,6 @@ pub struct SpriteInfoNode {
 	pub file_dialog: egui_file_dialog::FileDialog,
 	pub exporting: bool,
 	pub error: Option<String>,
-	pub can_delete: bool,
 	pub want_deletion: bool,
 }
 
@@ -786,13 +780,7 @@ impl TreeNode for SpriteInfoNode {
 			self.file_dialog.pick_file();
 			self.exporting = false;
 		}
-		if ui
-			.add_enabled(self.can_delete, egui::Button::new("Remove"))
-			.on_disabled_hover_text(
-				"All layers referencing this sprite must be removed before it can be removed",
-			)
-			.clicked()
-		{
+		if ui.button("Remove").clicked() {
 			self.want_deletion = true;
 		}
 	}
