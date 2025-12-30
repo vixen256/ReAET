@@ -657,11 +657,10 @@ dependencies = [
 [[package]]
 name = "directxtex"
 version = "1.3.0"
-source = "git+https://github.com/vixen256/directxtex-rs#4251276e4116b3172f0644ee13a9f696ef3a1cb0"
+source = "git+https://github.com/vixen256/directxtex-rs#8d684fdff0d616db366e74b9a1c9c97bc176f85c"
 dependencies = [
  "bitflags 2.10.0",
  "cc",
- "openmp-sys",
  "winresult",
 ]
 
@@ -2279,15 +2278,6 @@ name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
-
-[[package]]
-name = "openmp-sys"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caef37114187ab867226e338413fb6cb23ccd785a63d4ee63e7335c88f1079e0"
-dependencies = [
- "cc",
-]
 
 [[package]]
 name = "option-ext"
