@@ -1034,6 +1034,12 @@ impl AetCompNode {
 									video.color[2] as f32 / 255.0,
 									opacity,
 								],
+								blend_mode: layer
+									.video
+									.as_ref()
+									.map_or(aet::BlendMode::Normal, |video| {
+										video.transfer_mode.mode
+									}),
 							});
 						}
 						continue;
@@ -1058,6 +1064,10 @@ impl AetCompNode {
 						texture_index: sprite.info.texid() as usize,
 						mat: m,
 						color: [1.0, 1.0, 1.0, opacity],
+						blend_mode: layer
+							.video
+							.as_ref()
+							.map_or(aet::BlendMode::Normal, |video| video.transfer_mode.mode),
 					};
 
 					videos.videos.push(video);
@@ -1621,69 +1631,6 @@ impl TreeNode for AetLayerNode {
 						});
 					});
 				}
-
-				/* Real blend modes
-				 * Normal: wgpu::BlendState {
-						color: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::SrcAlpha,
-							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-							operation: wgpu::BlendOperation::Add,
-						},
-						alpha: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::Zero,
-							dst_factor: wgpu::BlendFactor::One,
-							operation: wgpu::BlendOperation::Add,
-						},
-					},
-				 * Screen: wgpu::BlendState {
-						color: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::SrcAlpha,
-							dst_factor: wgpu::BlendFactor::OneMinusSrc,
-							operation: wgpu::BlendOperation::Add,
-						},
-						alpha: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::Zero,
-							dst_factor: wgpu::BlendFactor::One,
-							operation: wgpu::BlendOperation::Add,
-						},
-					},
-				 * Add: wgpu::BlendState {
-						color: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::SrcAlpha,
-							dst_factor: wgpu::BlendFactor::One,
-							operation: wgpu::BlendOperation::Add,
-						},
-						alpha: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::Zero,
-							dst_factor: wgpu::BlendFactor::One,
-							operation: wgpu::BlendOperation::Add,
-						},
-					},
-				 * Multiply (Combiner 1): wgpu::BlendState {
-						color: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::Dst,
-							dst_factor: wgpu::BlendFactor::Zero,
-							operation: wgpu::BlendOperation::Add,
-						},
-						alpha: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::Zero,
-							dst_factor: wgpu::BlendFactor::One,
-							operation: wgpu::BlendOperation::Add,
-						},
-					},
-				* Overlay (Combiner 2): wgpu::BlendState {
-					color: wgpu::BlendComponent {
-						src_factor: wgpu::BlendFactor::SrcAlpha,
-						dst_factor: wgpu::BlendFactor::OneMinusSrc,
-						operation: wgpu::BlendOperation::Add,
-					},
-					alpha: wgpu::BlendComponent {
-						src_factor: wgpu::BlendFactor::Zero,
-						dst_factor: wgpu::BlendFactor::One,
-						operation: wgpu::BlendOperation::Add,
-					},
-				},
-				 */
 
 				if let Some(video) = &mut self.video {
 					body.row(height, |mut row| {
@@ -2462,6 +2409,7 @@ struct WgpuAetVideo {
 	texture_index: usize,
 	mat: Mat4,
 	color: [f32; 4],
+	blend_mode: aet::BlendMode,
 }
 
 impl egui_wgpu::CallbackTrait for WgpuAetVideos {
@@ -2475,77 +2423,99 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 	) -> Vec<wgpu::CommandBuffer> {
 		let resources: &mut WgpuRenderResources = callback_resources.get_mut().unwrap();
 
-		let instances = self
-			.videos
-			.iter()
-			.map(|video| {
-				let mut m = video.mat;
-				// Offset to match intended position
-				m.w = m.x * (video.source_size[0] / 2.0)
-					+ m.y * (video.source_size[1] / 2.0)
-					+ m.z + m.w;
+		let mut spr_infos = Vec::new();
 
-				let projection = Mat4 {
-					x: Vec4 {
-						x: 2.0 / self.viewport_size[0],
-						y: 0.0,
-						z: 0.0,
-						w: 0.0,
-					},
-					y: Vec4 {
-						x: 0.0,
-						y: -2.0 / self.viewport_size[1],
-						z: 0.0,
-						w: 0.0,
-					},
-					z: Vec4 {
-						x: 0.0,
-						y: 0.0,
-						z: 1.0,
-						w: 0.0,
-					},
-					w: Vec4 {
-						x: -1.0,
-						y: 1.0,
-						z: 0.0,
-						w: 1.0,
-					},
-				};
+		spr_infos.push(SpriteInfo {
+			matrix: crate::aet::Mat4::default().into(),
+			tex_coords: [
+				[0.0, 0.0, 0.0, 0.0],
+				[1.0, 0.0, 0.0, 0.0],
+				[0.0, 1.0, 0.0, 0.0],
+				[1.0, 1.0, 0.0, 0.0],
+			],
+			color: [0.0, 0.0, 0.0, 1.0],
+			texture_index: 255,
+			is_ycbcr: 0,
+			padding: 0,
+		});
 
-				let mut m = projection * m;
-				m.x = m.x * (video.source_size[0] / 2.0);
-				m.y = m.y * (-video.source_size[1] / 2.0);
+		spr_infos.extend(self.videos.iter().map(|video| {
+			let mut m = video.mat;
+			// Offset to match intended position
+			m.w =
+				m.x * (video.source_size[0] / 2.0) + m.y * (video.source_size[1] / 2.0) + m.z + m.w;
 
-				Instance {
-					matrix: m.into(),
-					tex_coords: [
-						[video.texture_coords[0], video.texture_coords[3]],
-						[video.texture_coords[2], video.texture_coords[3]],
-						[video.texture_coords[0], video.texture_coords[1]],
-						[video.texture_coords[2], video.texture_coords[1]],
-					],
-					color: video.color,
-					texture_index: video.texture_index as u32,
-					is_ycbcr: if video.is_ycbcr { 1 } else { 0 },
-				}
-			})
-			.collect::<Vec<_>>();
+			let projection = Mat4 {
+				x: Vec4 {
+					x: 2.0 / self.viewport_size[0],
+					y: 0.0,
+					z: 0.0,
+					w: 0.0,
+				},
+				y: Vec4 {
+					x: 0.0,
+					y: -2.0 / self.viewport_size[1],
+					z: 0.0,
+					w: 0.0,
+				},
+				z: Vec4 {
+					x: 0.0,
+					y: 0.0,
+					z: 1.0,
+					w: 0.0,
+				},
+				w: Vec4 {
+					x: -1.0,
+					y: 1.0,
+					z: 0.0,
+					w: 1.0,
+				},
+			};
 
-		if instances.len() * std::mem::size_of::<Instance>()
-			> resources.instance_buffer.size() as usize
-		{
-			resources.instance_buffer =
-				device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-					label: Some("Instance buffer"),
-					contents: bytemuck::cast_slice(&instances),
-					usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
-				});
-		} else {
+			let mut m = projection * m;
+			m.x = m.x * (video.source_size[0] / 2.0);
+			m.y = m.y * (-video.source_size[1] / 2.0);
+
+			SpriteInfo {
+				matrix: m.into(),
+				tex_coords: [
+					[video.texture_coords[0], video.texture_coords[3], 0.0, 0.0],
+					[video.texture_coords[2], video.texture_coords[3], 0.0, 0.0],
+					[video.texture_coords[0], video.texture_coords[1], 0.0, 0.0],
+					[video.texture_coords[2], video.texture_coords[1], 0.0, 0.0],
+				],
+				color: video.color,
+				texture_index: video.texture_index as u32,
+				is_ycbcr: if video.is_ycbcr { 1 } else { 0 },
+				padding: 0,
+			}
+		}));
+
+		for i in 0..(resources.uniform_buffers.len().min(spr_infos.len())) {
 			queue.write_buffer(
-				&resources.instance_buffer,
+				&resources.uniform_buffers[i].0,
 				0,
-				bytemuck::cast_slice(&instances),
+				bytemuck::cast_slice(&[spr_infos[i]]),
 			);
+		}
+
+		for i in resources.uniform_buffers.len()..spr_infos.len() {
+			let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+				label: Some(&format!("Uniform buffer {i}")),
+				contents: bytemuck::cast_slice(&[spr_infos[i]]),
+				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+			});
+
+			let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+				layout: &resources.uniform_bind_group_layout,
+				entries: &[wgpu::BindGroupEntry {
+					binding: 0,
+					resource: buffer.as_entire_binding(),
+				}],
+				label: Some(&format!("Uniform bind group {i}")),
+			});
+
+			resources.uniform_buffers.push((buffer, bind_group));
 		}
 
 		Vec::new()
@@ -2559,10 +2529,23 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 	) {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let textures: &WgpuRenderTextures = callback_resources.get().unwrap();
-		render_pass.set_pipeline(&resources.pipeline);
+
 		render_pass.set_bind_group(0, &textures.fragment_bind_group, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-		render_pass.set_vertex_buffer(1, resources.instance_buffer.slice(..));
-		render_pass.draw(0..6, 0..(self.videos.len() as u32));
+
+		// Draw black base
+		render_pass.set_pipeline(&resources.pipeline_normal);
+		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
+		render_pass.draw(0..6, 0..1);
+
+		for (i, video) in self.videos.iter().enumerate() {
+			match video.blend_mode {
+				aet::BlendMode::Screen => render_pass.set_pipeline(&resources.pipeline_screen),
+				aet::BlendMode::Add => render_pass.set_pipeline(&resources.pipeline_add),
+				_ => render_pass.set_pipeline(&resources.pipeline_normal),
+			}
+			render_pass.set_bind_group(1, &resources.uniform_buffers[i + 1].1, &[]);
+			render_pass.draw(0..6, 0..1);
+		}
 	}
 }

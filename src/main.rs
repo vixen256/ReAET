@@ -14,18 +14,17 @@ fn main() {
 		renderer: eframe::Renderer::Wgpu,
 		wgpu_options: WgpuConfiguration {
 			wgpu_setup: WgpuSetup::CreateNew(WgpuSetupCreateNew {
-				device_descriptor: std::sync::Arc::new(|_| {
-					wgpu::DeviceDescriptor {
-						label: Some("egui wgpu device"),
-						required_limits: wgpu::Limits {
-							max_binding_array_elements_per_shader_stage: 256,
-							..Default::default()
-						},
-						required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
-							| wgpu::Features::TEXTURE_BINDING_ARRAY | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
-						memory_hints: wgpu::MemoryHints::MemoryUsage,
+				device_descriptor: std::sync::Arc::new(|_| wgpu::DeviceDescriptor {
+					label: Some("egui wgpu device"),
+					required_limits: wgpu::Limits {
+						max_binding_array_elements_per_shader_stage: 256,
 						..Default::default()
-					}
+					},
+					required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
+						| wgpu::Features::DEPTH_CLIP_CONTROL
+						| wgpu::Features::TEXTURE_BINDING_ARRAY,
+					memory_hints: wgpu::MemoryHints::MemoryUsage,
+					..Default::default()
 				}),
 				..Default::default()
 			}),

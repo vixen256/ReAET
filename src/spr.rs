@@ -1035,23 +1035,24 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 	) -> Vec<wgpu::CommandBuffer> {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 
-		let instance = Instance {
+		let spr_info = SpriteInfo {
 			matrix: crate::aet::Mat4::default().into(),
 			tex_coords: [
-				[self.sprite_coords[0], self.sprite_coords[3]],
-				[self.sprite_coords[2], self.sprite_coords[3]],
-				[self.sprite_coords[0], self.sprite_coords[1]],
-				[self.sprite_coords[2], self.sprite_coords[1]],
+				[self.sprite_coords[0], self.sprite_coords[3], 0.0, 0.0],
+				[self.sprite_coords[2], self.sprite_coords[3], 0.0, 0.0],
+				[self.sprite_coords[0], self.sprite_coords[1], 0.0, 0.0],
+				[self.sprite_coords[2], self.sprite_coords[1], 0.0, 0.0],
 			],
 			color: [1.0, 1.0, 1.0, 1.0],
 			texture_index: self.texture_index,
 			is_ycbcr: if self.is_ycbcr { 1 } else { 0 },
+			padding: 0,
 		};
 
 		queue.write_buffer(
-			&resources.instance_buffer,
+			&resources.uniform_buffers[0].0,
 			0,
-			bytemuck::cast_slice(&[instance]),
+			bytemuck::cast_slice(&[spr_info]),
 		);
 
 		Vec::new()
@@ -1065,10 +1066,10 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 	) {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let texture: &WgpuRenderTextures = callback_resources.get().unwrap();
-		render_pass.set_pipeline(&resources.pipeline);
+		render_pass.set_pipeline(&resources.pipeline_normal);
 		render_pass.set_bind_group(0, &texture.fragment_bind_group, &[]);
+		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-		render_pass.set_vertex_buffer(1, resources.instance_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
 	}
 }

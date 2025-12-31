@@ -617,18 +617,24 @@ impl TreeNode for TextureNode {
 			bytemuck::cast_slice(&verticies),
 		);
 
-		let instance = Instance {
+		let spr_info = SpriteInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]],
+			tex_coords: [
+				[0.0, 1.0, 0.0, 0.0],
+				[1.0, 1.0, 0.0, 0.0],
+				[0.0, 0.0, 0.0, 0.0],
+				[1.0, 0.0, 0.0, 0.0],
+			],
 			color: [1.0, 1.0, 1.0, 1.0],
 			texture_index: self.index,
 			is_ycbcr: if self.texture.is_ycbcr() { 1 } else { 0 },
+			padding: 0,
 		};
 
 		render_state.queue.write_buffer(
-			&resources.instance_buffer,
+			&resources.uniform_buffers[0].0,
 			0,
-			bytemuck::cast_slice(&[instance]),
+			bytemuck::cast_slice(&[spr_info]),
 		);
 	}
 
@@ -689,19 +695,23 @@ impl egui_wgpu::CallbackTrait for WgpuTextureCallback {
 	) {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let texture: &WgpuRenderTextures = callback_resources.get().unwrap();
-		render_pass.set_pipeline(&resources.pipeline);
+		render_pass.set_pipeline(&resources.pipeline_normal);
 		render_pass.set_bind_group(0, &texture.fragment_bind_group, &[]);
+		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-		render_pass.set_vertex_buffer(1, resources.instance_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
 	}
 }
 
 pub struct WgpuRenderResources {
-	pub pipeline: wgpu::RenderPipeline,
+	pub pipeline_normal: wgpu::RenderPipeline,
+	pub pipeline_screen: wgpu::RenderPipeline,
+	pub pipeline_add: wgpu::RenderPipeline,
+	// Multiply and overlay currently unimplemented
 	pub fragment_bind_group_layout: wgpu::BindGroupLayout,
+	pub uniform_bind_group_layout: wgpu::BindGroupLayout,
 	pub vertex_buffer: wgpu::Buffer,
-	pub instance_buffer: wgpu::Buffer,
+	pub uniform_buffers: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
 	pub sampler: wgpu::Sampler,
 }
 
@@ -718,12 +728,13 @@ pub struct Vertex {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Instance {
+pub struct SpriteInfo {
 	pub matrix: [[f32; 4]; 4],
-	pub tex_coords: [[f32; 2]; 4],
+	pub tex_coords: [[f32; 4]; 4],
 	pub color: [f32; 4],
 	pub texture_index: u32,
 	pub is_ycbcr: u32,
+	pub padding: u64,
 }
 
 pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
@@ -752,68 +763,122 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			label: Some("Fragment bind group layout"),
 		});
 
+	let uniform_bind_group_layout =
+		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+			entries: &[wgpu::BindGroupLayoutEntry {
+				binding: 0,
+				visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+				ty: wgpu::BindingType::Buffer {
+					ty: wgpu::BufferBindingType::Uniform,
+					has_dynamic_offset: false,
+					min_binding_size: None,
+				},
+				count: None,
+			}],
+			label: Some("Uniform bind group layout"),
+		});
+
 	let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
 	let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 		label: Some("Texture Render Pipeline Layout"),
-		bind_group_layouts: &[&fragment_bind_group_layout],
+		bind_group_layouts: &[&fragment_bind_group_layout, &uniform_bind_group_layout],
 		push_constant_ranges: &[],
 	});
 
-	let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-		label: Some("Texture Render Pipeline"),
+	let normal_blend_mode = wgpu::BlendState {
+		color: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::SrcAlpha,
+			dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+			operation: wgpu::BlendOperation::Add,
+		},
+		alpha: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::Zero,
+			dst_factor: wgpu::BlendFactor::One,
+			operation: wgpu::BlendOperation::Add,
+		},
+	};
+
+	let screen_blend_mode = wgpu::BlendState {
+		color: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::SrcAlpha,
+			dst_factor: wgpu::BlendFactor::OneMinusSrc,
+			operation: wgpu::BlendOperation::Add,
+		},
+		alpha: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::Zero,
+			dst_factor: wgpu::BlendFactor::One,
+			operation: wgpu::BlendOperation::Add,
+		},
+	};
+
+	let add_blend_mode = wgpu::BlendState {
+		color: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::SrcAlpha,
+			dst_factor: wgpu::BlendFactor::One,
+			operation: wgpu::BlendOperation::Add,
+		},
+		alpha: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::Zero,
+			dst_factor: wgpu::BlendFactor::One,
+			operation: wgpu::BlendOperation::Add,
+		},
+	};
+
+	// Combiner 1
+	let _multiply_blend_mode = wgpu::BlendState {
+		color: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::Dst,
+			dst_factor: wgpu::BlendFactor::Zero,
+			operation: wgpu::BlendOperation::Add,
+		},
+		alpha: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::Zero,
+			dst_factor: wgpu::BlendFactor::One,
+			operation: wgpu::BlendOperation::Add,
+		},
+	};
+
+	// Combiner 2
+	let _overlay_blend_mode = wgpu::BlendState {
+		color: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::SrcAlpha,
+			dst_factor: wgpu::BlendFactor::OneMinusSrc,
+			operation: wgpu::BlendOperation::Add,
+		},
+		alpha: wgpu::BlendComponent {
+			src_factor: wgpu::BlendFactor::Zero,
+			dst_factor: wgpu::BlendFactor::One,
+			operation: wgpu::BlendOperation::Add,
+		},
+	};
+
+	let mut target = wgpu::ColorTargetState {
+		format: render_state.target_format,
+		blend: Some(normal_blend_mode),
+		write_mask: wgpu::ColorWrites::ALL,
+	};
+
+	let mut pipeline_desc = wgpu::RenderPipelineDescriptor {
+		label: Some("Normal blend mode"),
 		layout: Some(&pipeline_layout),
 		vertex: wgpu::VertexState {
 			module: &shader,
 			entry_point: Some("vs_main"),
-			buffers: &[
-				wgpu::VertexBufferLayout {
-					array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-					step_mode: wgpu::VertexStepMode::Vertex,
-					attributes: &wgpu::vertex_attr_array![
-						0 => Float32x2,
-						1 => Uint32,
-					],
-				},
-				wgpu::VertexBufferLayout {
-					array_stride: std::mem::size_of::<Instance>() as wgpu::BufferAddress,
-					step_mode: wgpu::VertexStepMode::Instance,
-					attributes: &wgpu::vertex_attr_array![
-						2 => Float32x4,
-						3 => Float32x4,
-						4 => Float32x4,
-						5 => Float32x4,
-						6 => Float32x2,
-						7 => Float32x2,
-						8 => Float32x2,
-						9 => Float32x2,
-						10 => Float32x4,
-						11 => Uint32,
-						12 => Uint32
-					],
-				},
-			],
+			buffers: &[wgpu::VertexBufferLayout {
+				array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+				step_mode: wgpu::VertexStepMode::Vertex,
+				attributes: &wgpu::vertex_attr_array![
+					0 => Float32x2,
+					1 => Uint32,
+				],
+			}],
 			compilation_options: wgpu::PipelineCompilationOptions::default(),
 		},
 		fragment: Some(wgpu::FragmentState {
 			module: &shader,
 			entry_point: Some("fs_main"),
-			targets: &[Some(wgpu::ColorTargetState {
-				format: render_state.target_format,
-				blend: Some(wgpu::BlendState {
-					color: wgpu::BlendComponent {
-						src_factor: wgpu::BlendFactor::SrcAlpha,
-						dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-						operation: wgpu::BlendOperation::Add,
-					},
-					alpha: wgpu::BlendComponent {
-						src_factor: wgpu::BlendFactor::Zero,
-						dst_factor: wgpu::BlendFactor::One,
-						operation: wgpu::BlendOperation::Add,
-					},
-				}),
-				write_mask: wgpu::ColorWrites::ALL,
-			})],
+			targets: &[Some(target.clone())],
 			compilation_options: wgpu::PipelineCompilationOptions::default(),
 		}),
 		primitive: wgpu::PrimitiveState {
@@ -822,7 +887,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			front_face: wgpu::FrontFace::Ccw,
 			cull_mode: None,
 			polygon_mode: wgpu::PolygonMode::Fill,
-			unclipped_depth: false,
+			unclipped_depth: true,
 			conservative: false,
 		},
 		depth_stencil: None,
@@ -833,7 +898,23 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		},
 		multiview: None,
 		cache: None,
-	});
+	};
+
+	let pipeline_normal = device.create_render_pipeline(&pipeline_desc);
+
+	target.blend = Some(screen_blend_mode);
+	let target_arr = [Some(target.clone())];
+	pipeline_desc.fragment.as_mut().unwrap().targets = &target_arr;
+	pipeline_desc.label = Some("Screen blend mode");
+
+	let pipeline_screen = device.create_render_pipeline(&pipeline_desc);
+
+	target.blend = Some(add_blend_mode);
+	let target_arr = [Some(target.clone())];
+	pipeline_desc.fragment.as_mut().unwrap().targets = &target_arr;
+	pipeline_desc.label = Some("Add blend mode");
+
+	let pipeline_add = device.create_render_pipeline(&pipeline_desc);
 
 	let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 		label: Some("Vertex buffer"),
@@ -866,16 +947,31 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
 	});
 
-	let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-		label: Some("Instance buffer"),
-		contents: bytemuck::cast_slice(&[Instance {
+	let base_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+		label: Some("Uniform buffer 0"),
+		contents: bytemuck::cast_slice(&[SpriteInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+			tex_coords: [
+				[0.0, 0.0, 0.0, 0.0],
+				[1.0, 0.0, 0.0, 0.0],
+				[0.0, 1.0, 0.0, 0.0],
+				[1.0, 1.0, 0.0, 0.0],
+			],
 			color: [1.0, 1.0, 1.0, 1.0],
 			texture_index: 0,
 			is_ycbcr: 0,
+			padding: 0,
 		}]),
-		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+	});
+
+	let uniform_buffer_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+		layout: &uniform_bind_group_layout,
+		entries: &[wgpu::BindGroupEntry {
+			binding: 0,
+			resource: base_uniform_buffer.as_entire_binding(),
+		}],
+		label: Some("Uniform bind group 0"),
 	});
 
 	let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -893,10 +989,13 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		.write()
 		.callback_resources
 		.insert(WgpuRenderResources {
-			pipeline,
+			pipeline_normal,
+			pipeline_screen,
+			pipeline_add,
 			fragment_bind_group_layout,
+			uniform_bind_group_layout,
 			vertex_buffer,
-			instance_buffer,
+			uniform_buffers: vec![(base_uniform_buffer, uniform_buffer_group)],
 			sampler,
 		});
 }
