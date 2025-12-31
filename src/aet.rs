@@ -4,7 +4,6 @@ use eframe::egui;
 use eframe::egui::Widget;
 use eframe::egui_wgpu;
 use eframe::egui_wgpu::wgpu;
-use eframe::egui_wgpu::wgpu::util::DeviceExt;
 use egui_material_icons::icons::*;
 use kkdlib::*;
 use regex::Regex;
@@ -2496,19 +2495,12 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			}
 		}));
 
-		for i in 0..(resources.uniform_buffers.len().min(spr_infos.len())) {
-			queue.write_buffer(
-				&resources.uniform_buffers[i].0,
-				0,
-				bytemuck::cast_slice(&[spr_infos[i]]),
-			);
-		}
-
 		for i in resources.uniform_buffers.len()..spr_infos.len() {
-			let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			let buffer = device.create_buffer(&wgpu::BufferDescriptor {
 				label: Some(&format!("Uniform buffer {i}")),
-				contents: bytemuck::cast_slice(&[spr_infos[i]]),
+				size: std::mem::size_of::<SpriteInfo>() as wgpu::BufferAddress,
 				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+				mapped_at_creation: false,
 			});
 
 			let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -2521,6 +2513,14 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			});
 
 			resources.uniform_buffers.push((buffer, bind_group));
+		}
+
+		for i in 0..spr_infos.len() {
+			queue.write_buffer(
+				&resources.uniform_buffers[i].0,
+				0,
+				bytemuck::cast_slice(&[spr_infos[i]]),
+			);
 		}
 
 		Vec::new()
