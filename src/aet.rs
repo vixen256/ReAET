@@ -324,11 +324,49 @@ impl TreeNode for AetSceneNode {
 		true
 	}
 
+	fn has_custom_tree(&self) -> bool {
+		true
+	}
+
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
-		self.root.layers.retain_mut(|layer| {
+		for layer in &mut self.root.layers {
 			f(layer);
-			!layer.want_deletion
-		});
+		}
+	}
+
+	fn display_tree(
+		&mut self,
+		ui: &mut egui::Ui,
+		path: &[usize],
+		selected: &mut Vec<usize>,
+		frame: &mut eframe::Frame,
+	) -> egui::Response {
+		let resp = crate::app::collapsing_selectable_label(
+			ui,
+			&self.name,
+			path,
+			path == *selected,
+			|ui| {
+				self.root.display_tree(ui, path, selected, frame);
+			},
+		)
+		.header_response;
+
+		if self.has_context_menu() {
+			let menu = egui::Popup::context_menu(&resp).show(|ui| self.display_ctx_menu(ui));
+			if menu.is_some() {
+				self.selected(frame);
+				*selected = path.to_vec();
+			}
+		}
+
+		if resp.clicked() {
+			self.selected(frame);
+			*selected = path.to_vec();
+		}
+
+		self.root.layers.retain(|layer| !layer.want_deletion);
+
 		for i in self
 			.root
 			.layers
@@ -338,11 +376,14 @@ impl TreeNode for AetSceneNode {
 			.map(|(i, _)| i)
 			.collect::<Vec<_>>()
 		{
-			self.root.layers.push(self.root.layers[i].clone());
+			self.root.layers.insert(i, self.root.layers[i].clone());
 		}
+
 		for layer in &mut self.root.layers {
 			layer.want_duplicate = false;
 		}
+
+		resp
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui) {
@@ -981,6 +1022,66 @@ impl AetCompNode {
 
 		aet::Composition { layers }
 	}
+
+	fn display_tree(
+		&mut self,
+		ui: &mut egui::Ui,
+		path: &[usize],
+		selected: &mut Vec<usize>,
+		frame: &mut eframe::Frame,
+	) -> egui::Response {
+		let resp = egui_dnd::dnd(ui, ui.id()).show(
+			self.layers.iter_mut().enumerate(), // Use index in hash
+			|ui, (_, layer), handle, state| {
+				ui.horizontal(|ui| {
+					let resp = crate::app::show_node(ui, layer, state.index, path, selected, frame);
+
+					handle.sense(egui::Sense::click()).ui(ui, |ui| {
+						let rect = egui::Rect {
+							min: egui::pos2(
+								resp.rect.max.x + ui.spacing().item_spacing.x,
+								resp.rect.min.y,
+							),
+							max: egui::pos2(
+								resp.rect.max.x + ui.max_rect().right()
+									- resp.rect.right() - ui.spacing().item_spacing.x,
+								resp.rect.max.y,
+							),
+						};
+						ui.allocate_rect(rect, egui::Sense::empty());
+					});
+				});
+			},
+		);
+
+		if let Some(update) = &resp.final_update() {
+			let layer = self.layers.remove(update.from);
+			let to = if update.to > update.from {
+				update.to - 1
+			} else {
+				update.to
+			};
+
+			self.layers.insert(to, layer);
+
+			let mut from_path = path.to_vec();
+			from_path.push(update.from);
+
+			if from_path == *selected {
+				*selected.last_mut().unwrap() = to;
+			} else if selected.starts_with(&path) && selected.len() > path.len() {
+				let selected = selected.get_mut(path.len()).unwrap();
+				if to > update.from && *selected <= to && *selected > update.from {
+					*selected -= 1;
+				} else if update.from > to && *selected >= to && *selected < update.from {
+					*selected += 1;
+				}
+			}
+		}
+
+		ui.allocate_exact_size(egui::vec2(0.0, 0.0), egui::Sense::empty())
+			.1
+	}
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1033,6 +1134,12 @@ pub struct AetLayerNode {
 	pub want_duplicate: bool,
 }
 
+impl std::hash::Hash for AetLayerNode {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.name.hash(state);
+	}
+}
+
 impl PartialEq for AetLayerNode {
 	fn eq(&self, other: &Self) -> bool {
 		self.name == other.name
@@ -1072,29 +1179,79 @@ impl TreeNode for AetLayerNode {
 		}
 	}
 
+	fn has_custom_tree(&self) -> bool {
+		self.has_children()
+	}
+
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
 		match &mut self.item {
 			AetItemNode::Comp(comp) => {
-				comp.layers.retain_mut(|layer| {
-					f(layer);
-					!layer.want_deletion
-				});
-				for i in comp
-					.layers
-					.iter()
-					.enumerate()
-					.filter(|(_, layer)| layer.want_duplicate)
-					.map(|(i, _)| i)
-					.collect::<Vec<_>>()
-				{
-					comp.layers.push(comp.layers[i].clone());
-				}
 				for layer in &mut comp.layers {
-					layer.want_duplicate = false;
+					f(layer);
 				}
 			}
 			_ => {}
 		}
+	}
+
+	fn display_tree(
+		&mut self,
+		ui: &mut egui::Ui,
+		path: &[usize],
+		selected: &mut Vec<usize>,
+		frame: &mut eframe::Frame,
+	) -> egui::Response {
+		let resp = ui
+			.horizontal(|ui| {
+				self.label_sameline(ui);
+				crate::app::collapsing_selectable_label(
+					ui,
+					&self.name,
+					path,
+					path == *selected,
+					|ui| {
+						let AetItemNode::Comp(comp) = &mut self.item else {
+							panic!();
+						};
+
+						comp.display_tree(ui, path, selected, frame);
+
+						comp.layers.retain(|layer| !layer.want_deletion);
+
+						for i in comp
+							.layers
+							.iter()
+							.enumerate()
+							.filter(|(_, layer)| layer.want_duplicate)
+							.map(|(i, _)| i)
+							.collect::<Vec<_>>()
+						{
+							comp.layers.insert(i, comp.layers[i].clone());
+						}
+
+						for layer in &mut comp.layers {
+							layer.want_duplicate = false;
+						}
+					},
+				)
+			})
+			.inner
+			.header_response;
+
+		if self.has_context_menu() {
+			let menu = egui::Popup::context_menu(&resp).show(|ui| self.display_ctx_menu(ui));
+			if menu.is_some() {
+				self.selected(frame);
+				*selected = path.to_vec();
+			}
+		}
+
+		if resp.clicked() {
+			self.selected(frame);
+			*selected = path.to_vec();
+		}
+
+		resp
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui) {

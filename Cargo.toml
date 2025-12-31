@@ -7,6 +7,7 @@ edition = "2024"
 bytemuck = { version = "1.24", features = ["derive"] }
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "wayland", "wgpu", "x11"] }
 egui-file-dialog = { version = "0.12", default-features = false, features = ["default_fonts"] }
+egui_dnd = "0.14"
 egui_extras = { version = "0.33", features = ["file", "image"] }
 egui_material_icons = "0.5"
 egui_plot = "0.34"
@@ -24,3 +25,4 @@ opt-level = 1
 codegen-units = 1
 lto = true
 strip = true
+panic = "abort"

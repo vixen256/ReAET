@@ -13,10 +13,23 @@ pub trait TreeNode {
 	fn has_children(&self) -> bool {
 		false
 	}
+	fn has_custom_tree(&self) -> bool {
+		false
+	}
 	fn has_context_menu(&self) -> bool {
 		false
 	}
 	fn display_children(&mut self, _f: &mut dyn FnMut(&mut dyn TreeNode)) {}
+	fn display_tree(
+		&mut self,
+		ui: &mut egui::Ui,
+		_path: &[usize],
+		_selected: &mut Vec<usize>,
+		_frame: &mut eframe::Frame,
+	) -> egui::Response {
+		ui.allocate_exact_size(egui::vec2(0.0, 0.0), egui::Sense::empty())
+			.1
+	}
 	fn selected(&mut self, _frame: &mut eframe::Frame) {}
 	fn display_visual(
 		&mut self,
@@ -220,18 +233,20 @@ pub fn collapsing_selectable_label<R>(
 	.inner
 }
 
-fn show_node(
+pub fn show_node(
 	ui: &mut egui::Ui,
 	node: &mut dyn TreeNode,
 	index: usize,
 	path: &[usize],
 	selected: &mut Vec<usize>,
 	frame: &mut eframe::Frame,
-) {
+) -> egui::Response {
 	let mut path = path.to_vec();
 	path.push(index);
 
-	if node.has_children() {
+	if node.has_custom_tree() {
+		node.display_tree(ui, &path, selected, frame)
+	} else if node.has_children() {
 		let resp = ui
 			.horizontal(|ui| {
 				node.label_sameline(ui);
@@ -265,14 +280,18 @@ fn show_node(
 			node.selected(frame);
 			*selected = path;
 		}
+
+		resp
 	} else {
-		let resp = ui.horizontal(|ui| {
-			node.label_sameline(ui);
-			ui.selectable_label(path == *selected, node.label())
-		});
+		let resp = ui
+			.horizontal(|ui| {
+				node.label_sameline(ui);
+				ui.selectable_label(path == *selected, node.label())
+			})
+			.inner;
 
 		if node.has_context_menu() {
-			let menu = egui::Popup::context_menu(&resp.inner).show(|ui| node.display_ctx_menu(ui));
+			let menu = egui::Popup::context_menu(&resp).show(|ui| node.display_ctx_menu(ui));
 
 			if menu.is_some() {
 				node.selected(frame);
@@ -280,10 +299,12 @@ fn show_node(
 			}
 		}
 
-		if resp.inner.clicked() {
+		if resp.clicked() {
 			node.selected(frame);
 			*selected = path;
 		}
+
+		resp
 	}
 }
 
