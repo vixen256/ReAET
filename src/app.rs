@@ -27,8 +27,7 @@ pub trait TreeNode {
 		_selected: &mut Vec<usize>,
 		_frame: &mut eframe::Frame,
 	) -> egui::Response {
-		ui.allocate_exact_size(egui::vec2(0.0, 0.0), egui::Sense::empty())
-			.1
+		ui.response()
 	}
 	fn selected(&mut self, _frame: &mut eframe::Frame) {}
 	fn display_visual(

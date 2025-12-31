@@ -870,8 +870,7 @@ dependencies = [
 [[package]]
 name = "egui_animation"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3db554dd3784f469d804f7dc25d1b14a2e00f1608d7af60218ccbced720a6e8"
+source = "git+https://github.com/vixen256/hello_egui#47dd668b45646b2d78bfb47b8df21a6d9a7cf56a"
 dependencies = [
  "egui",
  "hello_egui_utils",
@@ -881,8 +880,7 @@ dependencies = [
 [[package]]
 name = "egui_dnd"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f535b8df7ca89f781954feaa505899c8955b550074ecafcaa3c040f67aec3d46"
+source = "git+https://github.com/vixen256/hello_egui#47dd668b45646b2d78bfb47b8df21a6d9a7cf56a"
 dependencies = [
  "egui",
  "egui_animation",
@@ -1405,8 +1403,7 @@ dependencies = [
 [[package]]
 name = "hello_egui_utils"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d09c2c7f3aa61624b1bec320be9029f30e06769f92e39ac99a6d6e01024ae8"
+source = "git+https://github.com/vixen256/hello_egui#47dd668b45646b2d78bfb47b8df21a6d9a7cf56a"
 dependencies = [
  "concat-idents",
  "egui",

@@ -1030,26 +1030,35 @@ impl AetCompNode {
 		selected: &mut Vec<usize>,
 		frame: &mut eframe::Frame,
 	) -> egui::Response {
+		let mut last_resp = None;
 		let resp = egui_dnd::dnd(ui, ui.id()).show(
 			self.layers.iter_mut().enumerate(), // Use index in hash
-			|ui, (_, layer), handle, state| {
+			|ui, (_, layer), mut handle, state| {
 				ui.horizontal(|ui| {
 					let resp = crate::app::show_node(ui, layer, state.index, path, selected, frame);
 
-					handle.sense(egui::Sense::click()).ui(ui, |ui| {
-						let rect = egui::Rect {
-							min: egui::pos2(
-								resp.rect.max.x + ui.spacing().item_spacing.x,
-								resp.rect.min.y,
-							),
-							max: egui::pos2(
-								resp.rect.max.x + ui.max_rect().right()
-									- resp.rect.right() - ui.spacing().item_spacing.x,
-								resp.rect.max.y,
-							),
-						};
-						ui.allocate_rect(rect, egui::Sense::empty());
-					});
+					let rect = egui::Rect {
+						min: egui::pos2(
+							resp.rect.max.x + ui.spacing().item_spacing.x,
+							resp.rect.min.y,
+						),
+						max: egui::pos2(
+							resp.rect.max.x + ui.available_size().x - ui.spacing().item_spacing.x,
+							resp.rect.min.y + ui.text_style_height(&egui::TextStyle::Body)
+								- ui.spacing().item_spacing.y,
+						),
+					};
+
+					handle.handle_response(
+						ui.interact(
+							rect,
+							egui::Id::new(&layer.name).with(state.index).with("dnd"),
+							egui::Sense::click_and_drag(),
+						),
+						ui,
+					);
+
+					last_resp = Some(resp);
 				});
 			},
 		);
@@ -1079,8 +1088,7 @@ impl AetCompNode {
 			}
 		}
 
-		ui.allocate_exact_size(egui::vec2(0.0, 0.0), egui::Sense::empty())
-			.1
+		last_resp.unwrap_or(ui.response())
 	}
 }
 
