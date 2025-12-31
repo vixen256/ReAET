@@ -16,13 +16,8 @@ fn main() {
 			wgpu_setup: WgpuSetup::CreateNew(WgpuSetupCreateNew {
 				device_descriptor: std::sync::Arc::new(|_| wgpu::DeviceDescriptor {
 					label: Some("egui wgpu device"),
-					required_limits: wgpu::Limits {
-						max_binding_array_elements_per_shader_stage: 256,
-						..Default::default()
-					},
 					required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
-						| wgpu::Features::DEPTH_CLIP_CONTROL
-						| wgpu::Features::TEXTURE_BINDING_ARRAY,
+						| wgpu::Features::DEPTH_CLIP_CONTROL,
 					memory_hints: wgpu::MemoryHints::MemoryUsage,
 					..Default::default()
 				}),

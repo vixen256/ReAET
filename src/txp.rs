@@ -626,9 +626,10 @@ impl TreeNode for TextureNode {
 				[1.0, 0.0, 0.0, 0.0],
 			],
 			color: [1.0, 1.0, 1.0, 1.0],
-			texture_index: self.index,
 			is_ycbcr: if self.texture.is_ycbcr() { 1 } else { 0 },
-			padding: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
 		};
 
 		render_state.queue.write_buffer(
@@ -679,12 +680,16 @@ impl TreeNode for TextureNode {
 
 		Some(egui_wgpu::Callback::new_paint_callback(
 			rect,
-			WgpuTextureCallback {},
+			WgpuTextureCallback {
+				texture_index: self.index,
+			},
 		))
 	}
 }
 
-struct WgpuTextureCallback {}
+struct WgpuTextureCallback {
+	texture_index: u32,
+}
 
 impl egui_wgpu::CallbackTrait for WgpuTextureCallback {
 	fn paint(
@@ -696,7 +701,11 @@ impl egui_wgpu::CallbackTrait for WgpuTextureCallback {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let texture: &WgpuRenderTextures = callback_resources.get().unwrap();
 		render_pass.set_pipeline(&resources.pipeline_normal);
-		render_pass.set_bind_group(0, &texture.fragment_bind_group, &[]);
+		render_pass.set_bind_group(
+			0,
+			&texture.fragment_bind_group[self.texture_index as usize].1,
+			&[],
+		);
 		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
@@ -716,7 +725,8 @@ pub struct WgpuRenderResources {
 }
 
 pub struct WgpuRenderTextures {
-	pub fragment_bind_group: wgpu::BindGroup,
+	pub fragment_bind_group: Vec<(wgpu::Texture, wgpu::BindGroup)>,
+	pub empty_texture: wgpu::BindGroup,
 }
 
 #[repr(C)]
@@ -732,9 +742,10 @@ pub struct SpriteInfo {
 	pub matrix: [[f32; 4]; 4],
 	pub tex_coords: [[f32; 4]; 4],
 	pub color: [f32; 4],
-	pub texture_index: u32,
 	pub is_ycbcr: u32,
-	pub padding: u64,
+	pub _padding_0: u32,
+	pub _padding_1: u32,
+	pub _padding_2: u32,
 }
 
 pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
@@ -751,7 +762,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 						view_dimension: wgpu::TextureViewDimension::D2,
 						sample_type: wgpu::TextureSampleType::Float { filterable: true },
 					},
-					count: std::num::NonZeroU32::new(256),
+					count: None,
 				},
 				wgpu::BindGroupLayoutEntry {
 					binding: 1,
@@ -958,9 +969,10 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 				[1.0, 1.0, 0.0, 0.0],
 			],
 			color: [1.0, 1.0, 1.0, 1.0],
-			texture_index: 0,
 			is_ycbcr: 0,
-			padding: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
 		}]),
 		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
 	});

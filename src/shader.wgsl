@@ -42,19 +42,19 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 
 @group(0) @binding(0)
-var Textures: binding_array<texture_2d<f32>, 256>;
+var Texture: texture_2d<f32>;
 @group(0) @binding(1)
 var Sampler: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 	if spr.is_ycbcr == 1 {
-		var ya = textureSampleLevel(Textures[spr.texture_index], Sampler, in.tex_coords, 0.0).xy;
-		var cbcr = textureSampleLevel(Textures[spr.texture_index], Sampler, in.tex_coords, 1.0).xy * CBCR_MULT - CBCR_SUB;
+		var ya = textureSampleLevel(Texture, Sampler, in.tex_coords, 0.0).xy;
+		var cbcr = textureSampleLevel(Texture, Sampler, in.tex_coords, 1.0).xy * CBCR_MULT - CBCR_SUB;
 		var rgb = vec3(ya.x, cbcr) * YCbCrRgbMatrix;
 		return vec4(rgb, ya.y) * spr.color;
 	} else {
-		var rgba = textureSample(Textures[spr.texture_index], Sampler, in.tex_coords);
+		var rgba = textureSample(Texture, Sampler, in.tex_coords);
 		return rgba * spr.color;
 	}
 }

@@ -16,7 +16,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 kkdlib = { git = "https://github.com/vixen256/KKdLib-sys" }
 regex = "1.12"
 transform-gizmo-egui = "0.8"
-wgpu = { version = "27.0", default-features = false, features = ["dx12", "metal", "parking_lot", "std", "static-dxc", "vulkan"] }
+wgpu = { version = "27.0", default-features = false, features = ["gles", "metal", "parking_lot", "std", "vulkan"] }
 
 [profile.dev.package."*"]
 opt-level = 1

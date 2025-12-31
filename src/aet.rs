@@ -1024,9 +1024,10 @@ impl AetCompNode {
 						if display_placeholders {
 							videos.videos.push(WgpuAetVideo {
 								is_ycbcr: false,
+								is_empty: true,
 								texture_coords: [0.0, 0.0, 0.0, 0.0],
 								source_size: [video.width as f32, video.height as f32],
-								texture_index: 255,
+								texture_index: 0,
 								mat: m,
 								color: [
 									video.color[0] as f32 / 255.0,
@@ -1059,6 +1060,7 @@ impl AetCompNode {
 
 					let video = WgpuAetVideo {
 						is_ycbcr: texture.texture.is_ycbcr(),
+						is_empty: false,
 						texture_coords: [x, y, w, h],
 						source_size: [video.width as f32, video.height as f32],
 						texture_index: sprite.info.texid() as usize,
@@ -2404,6 +2406,7 @@ struct WgpuAetVideos {
 
 struct WgpuAetVideo {
 	is_ycbcr: bool,
+	is_empty: bool,
 	texture_coords: [f32; 4],
 	source_size: [f32; 2],
 	texture_index: usize,
@@ -2434,9 +2437,10 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				[1.0, 1.0, 0.0, 0.0],
 			],
 			color: [0.0, 0.0, 0.0, 1.0],
-			texture_index: 255,
 			is_ycbcr: 0,
-			padding: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
 		});
 
 		spr_infos.extend(self.videos.iter().map(|video| {
@@ -2485,9 +2489,10 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 					[video.texture_coords[2], video.texture_coords[1], 0.0, 0.0],
 				],
 				color: video.color,
-				texture_index: video.texture_index as u32,
 				is_ycbcr: if video.is_ycbcr { 1 } else { 0 },
-				padding: 0,
+				_padding_0: 0,
+				_padding_1: 0,
+				_padding_2: 0,
 			}
 		}));
 
@@ -2530,11 +2535,11 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let textures: &WgpuRenderTextures = callback_resources.get().unwrap();
 
-		render_pass.set_bind_group(0, &textures.fragment_bind_group, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 
 		// Draw black base
 		render_pass.set_pipeline(&resources.pipeline_normal);
+		render_pass.set_bind_group(0, &textures.empty_texture, &[]);
 		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
 		render_pass.draw(0..6, 0..1);
 
@@ -2543,6 +2548,15 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				aet::BlendMode::Screen => render_pass.set_pipeline(&resources.pipeline_screen),
 				aet::BlendMode::Add => render_pass.set_pipeline(&resources.pipeline_add),
 				_ => render_pass.set_pipeline(&resources.pipeline_normal),
+			}
+			if video.is_empty {
+				render_pass.set_bind_group(0, &textures.empty_texture, &[]);
+			} else {
+				render_pass.set_bind_group(
+					0,
+					&textures.fragment_bind_group[video.texture_index].1,
+					&[],
+				);
 			}
 			render_pass.set_bind_group(1, &resources.uniform_buffers[i + 1].1, &[]);
 			render_pass.draw(0..6, 0..1);

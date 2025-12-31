@@ -254,7 +254,7 @@ impl SpriteSetNode {
 		let render_state = frame.wgpu_render_state().unwrap();
 		let device = &render_state.device;
 
-		let mut texture_views = Vec::new();
+		let mut textures = Vec::new();
 
 		let callback_resources = render_state.renderer.read();
 		let resources: &WgpuRenderResources = callback_resources.callback_resources.get().unwrap();
@@ -437,11 +437,24 @@ impl SpriteSetNode {
 				texture
 			};
 
-			texture_views.push(texture.create_view(&wgpu::TextureViewDescriptor::default()));
-		}
+			let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+				layout: &resources.fragment_bind_group_layout,
+				entries: &[
+					wgpu::BindGroupEntry {
+						binding: 0,
+						resource: wgpu::BindingResource::TextureView(
+							&texture.create_view(&wgpu::TextureViewDescriptor::default()),
+						),
+					},
+					wgpu::BindGroupEntry {
+						binding: 1,
+						resource: wgpu::BindingResource::Sampler(&resources.sampler),
+					},
+				],
+				label: Some("Fragment bind group"),
+			});
 
-		if texture_views.len() >= 256 {
-			panic!()
+			textures.push((texture, bind_group));
 		}
 
 		let empty_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -479,17 +492,13 @@ impl SpriteSetNode {
 			},
 		);
 
-		for _ in texture_views.len()..256 {
-			texture_views.push(empty_texture.create_view(&wgpu::TextureViewDescriptor::default()));
-		}
-
-		let fragment_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+		let empty_texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
 			layout: &resources.fragment_bind_group_layout,
 			entries: &[
 				wgpu::BindGroupEntry {
 					binding: 0,
-					resource: wgpu::BindingResource::TextureViewArray(
-						&texture_views.iter().collect::<Vec<_>>(),
+					resource: wgpu::BindingResource::TextureView(
+						&empty_texture.create_view(&wgpu::TextureViewDescriptor::default()),
 					),
 				},
 				wgpu::BindGroupEntry {
@@ -507,7 +516,8 @@ impl SpriteSetNode {
 			.write()
 			.callback_resources
 			.insert(WgpuRenderTextures {
-				fragment_bind_group,
+				fragment_bind_group: textures,
+				empty_texture,
 			});
 	}
 }
@@ -1044,9 +1054,10 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 				[self.sprite_coords[2], self.sprite_coords[1], 0.0, 0.0],
 			],
 			color: [1.0, 1.0, 1.0, 1.0],
-			texture_index: self.texture_index,
 			is_ycbcr: if self.is_ycbcr { 1 } else { 0 },
-			padding: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
 		};
 
 		queue.write_buffer(
@@ -1067,7 +1078,11 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let texture: &WgpuRenderTextures = callback_resources.get().unwrap();
 		render_pass.set_pipeline(&resources.pipeline_normal);
-		render_pass.set_bind_group(0, &texture.fragment_bind_group, &[]);
+		render_pass.set_bind_group(
+			0,
+			&texture.fragment_bind_group[self.texture_index as usize].1,
+			&[],
+		);
 		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
