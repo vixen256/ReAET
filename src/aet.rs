@@ -205,16 +205,31 @@ impl TreeNode for AetSetNode {
 			scenes: self
 				.scenes
 				.iter()
-				.map(|scene| aet::Scene {
-					name: scene.name.clone(),
-					start_time: scene.start_time,
-					end_time: scene.end_time,
-					fps: scene.fps,
-					color: scene.color,
-					width: scene.width,
-					height: scene.height,
-					camera: scene.camera.clone(),
-					root: scene.root.to_kkdlib(),
+				.map(|scene| {
+					let (root, map) = scene.root.to_kkdlib();
+
+					for (_, b) in &map {
+						let mut b = b.lock().unwrap();
+						let parent: Option<Rc<Mutex<AetLayerNode>>> =
+							unsafe { std::mem::transmute(b.parent.clone()) };
+						let Some(parent) = &parent else { continue };
+						b.parent = map
+							.iter()
+							.find(|(a, _)| Rc::ptr_eq(a, parent))
+							.map(|(_, b)| b.clone());
+					}
+
+					aet::Scene {
+						name: scene.name.clone(),
+						start_time: scene.start_time,
+						end_time: scene.end_time,
+						fps: scene.fps,
+						color: scene.color,
+						width: scene.width,
+						height: scene.height,
+						camera: scene.camera.clone(),
+						root,
+					}
 				})
 				.collect(),
 		};
@@ -234,24 +249,39 @@ impl AetSetNode {
 		let scenes = set
 			.scenes
 			.into_iter()
-			.map(|scene| AetSceneNode {
-				name: scene.name,
-				start_time: scene.start_time,
-				end_time: scene.end_time,
-				fps: scene.fps,
-				color: scene.color,
-				width: scene.width,
-				height: scene.height,
-				camera: scene.camera,
-				root: AetCompNode::create(scene.root),
+			.map(|scene| {
+				let (root, map) = AetCompNode::create(&scene.root);
 
-				current_time: scene.start_time,
-				playing: false,
-				display_placeholders: false,
-				centered: false,
+				for (_, b) in &map {
+					let mut b = b.lock().unwrap();
+					let parent: Option<Rc<Mutex<aet::Layer>>> =
+						unsafe { std::mem::transmute(b.parent.clone()) };
+					let Some(parent) = &parent else { continue };
+					b.parent = map
+						.iter()
+						.find(|(a, _)| Rc::ptr_eq(a, parent))
+						.map(|(_, b)| b.clone());
+				}
 
-				selected_curve: None,
-				gizmo: Gizmo::default(),
+				AetSceneNode {
+					name: scene.name,
+					start_time: scene.start_time,
+					end_time: scene.end_time,
+					fps: scene.fps,
+					color: scene.color,
+					width: scene.width,
+					height: scene.height,
+					camera: scene.camera,
+					root,
+
+					current_time: scene.start_time,
+					playing: false,
+					display_placeholders: false,
+					centered: false,
+
+					selected_curve: None,
+					gizmo: Gizmo::default(),
+				}
 			})
 			.collect();
 
@@ -330,7 +360,8 @@ impl TreeNode for AetSceneNode {
 
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
 		for layer in &mut self.root.layers {
-			f(layer);
+			let mut lock = layer.try_lock().unwrap();
+			f(&mut *lock);
 		}
 	}
 
@@ -365,14 +396,16 @@ impl TreeNode for AetSceneNode {
 			*selected = path.to_vec();
 		}
 
-		self.root.layers.retain(|layer| !layer.want_deletion);
+		self.root
+			.layers
+			.retain(|layer| !layer.try_lock().unwrap().want_deletion);
 
 		for i in self
 			.root
 			.layers
 			.iter()
 			.enumerate()
-			.filter(|(_, layer)| layer.want_duplicate)
+			.filter(|(_, layer)| layer.try_lock().unwrap().want_duplicate)
 			.map(|(i, _)| i)
 			.collect::<Vec<_>>()
 		{
@@ -380,7 +413,7 @@ impl TreeNode for AetSceneNode {
 		}
 
 		for layer in &mut self.root.layers {
-			layer.want_duplicate = false;
+			layer.try_lock().unwrap().want_duplicate = false;
 		}
 
 		resp
@@ -401,6 +434,32 @@ impl TreeNode for AetSceneNode {
 						ui.text_edit_singleline(&mut self.name);
 					});
 				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("Width");
+					});
+					row.col(|ui| {
+						egui::DragValue::new(&mut self.width)
+							.max_decimals(2)
+							.speed(0.0)
+							.update_while_editing(true)
+							.ui(ui);
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("Height");
+					});
+					row.col(|ui| {
+						egui::DragValue::new(&mut self.height)
+							.max_decimals(2)
+							.speed(0.0)
+							.update_while_editing(true)
+							.ui(ui);
+					});
+				});
 			});
 	}
 
@@ -411,7 +470,7 @@ impl TreeNode for AetSceneNode {
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
 		if ui.button("Hide all").clicked() {
 			for layer in &mut self.root.layers {
-				layer.visible = false;
+				layer.try_lock().unwrap().visible = false;
 			}
 		}
 	}
@@ -481,8 +540,7 @@ impl AetSceneNode {
 				translation[1] = self.height as f64 / 2.0;
 			}
 
-			let layer = &mut self.root.layers[selected[2]];
-			if let Some(video) = &layer.video {
+			if let Some(video) = &self.root.layers[selected[2]].try_lock().unwrap().video {
 				translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
 				translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
 				if let Some(_3d) = &video._3d {
@@ -514,11 +572,44 @@ impl AetSceneNode {
 				selected
 					.iter()
 					.skip(3)
-					.fold(&mut self.root.layers[selected[2]], |layer, i| {
-						let AetItemNode::Comp(comp) = &mut layer.item else {
+					.fold(self.root.layers[selected[2]].clone(), |layer, i| {
+						let layer = layer.try_lock().unwrap();
+						let AetItemNode::Comp(comp) = &layer.item else {
 							panic!()
 						};
-						let layer = &mut comp.layers[*i];
+
+						let layer = comp.layers[*i].try_lock().unwrap();
+
+						if let Some(parent) = &layer.parent
+							&& let Some(video) = &parent.try_lock().unwrap().video
+						{
+							translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
+							translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
+							if let Some(_3d) = &video._3d {
+								translation[2] -= scale[2] * _3d.pos_z.interpolate(frame) as f64;
+							}
+							scale[0] *= video.scale_x.interpolate(frame) as f64;
+							scale[1] *= video.scale_y.interpolate(frame) as f64;
+							if let Some(_3d) = &video._3d {
+								scale[2] *= _3d.scale_z.interpolate(frame) as f64;
+							}
+							translation[0] -= scale[0] * video.anchor_x.interpolate(frame) as f64;
+							translation[1] -= scale[1] * video.anchor_y.interpolate(frame) as f64;
+							if let Some(_3d) = &video._3d {
+								translation[2] -= scale[2] * _3d.anchor_z.interpolate(frame) as f64;
+							}
+
+							if let Some(_3d) = &video._3d {
+								rotation[0] += _3d.dir_x.interpolate(frame).to_radians() as f64;
+								rotation[1] += _3d.dir_y.interpolate(frame).to_radians() as f64;
+								rotation[2] += _3d.dir_z.interpolate(frame).to_radians() as f64;
+
+								rotation[0] += _3d.rot_x.interpolate(frame).to_radians() as f64;
+								rotation[1] += _3d.rot_y.interpolate(frame).to_radians() as f64;
+							}
+							rotation[2] += video.rot_z.interpolate(frame).to_radians() as f64;
+						}
+
 						if let Some(video) = &layer.video {
 							translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
 							translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
@@ -548,12 +639,12 @@ impl AetSceneNode {
 						}
 
 						frame = (frame - layer.start_time) * layer.time_scale + layer.offset_time;
-						layer
+						comp.layers[*i].clone()
 					});
 
-			if let Some(video) = &mut selected.video {
-				translation[0] += video.anchor_x.interpolate(frame) as f64;
-				translation[1] += video.anchor_y.interpolate(frame) as f64;
+			if let Some(video) = &mut selected.try_lock().unwrap().video {
+				translation[0] += video.anchor_x.interpolate(frame) as f64 * scale[0];
+				translation[1] += video.anchor_y.interpolate(frame) as f64 * scale[1];
 				translation[1] = -translation[1] + self.height as f64;
 
 				self.gizmo.update_config(GizmoConfig {
@@ -654,7 +745,7 @@ impl AetSceneNode {
 
 		if self.root.layers.len() == other.root.layers.len() {
 			for (a, b) in self.root.layers.iter_mut().zip(other.root.layers.iter()) {
-				a.update_from(b);
+				a.try_lock().unwrap().update_from(&*b.try_lock().unwrap());
 			}
 		} else {
 			self.root = other.root.clone();
@@ -662,18 +753,123 @@ impl AetSceneNode {
 	}
 }
 
-#[derive(Clone, PartialEq)]
+pub fn calc_mat(m: &mut Mat4, opacity: &mut f32, video: &aet::LayerVideo, frame: f32) {
+	let mut pos = [0.0; 3];
+	let mut scale = [1.0; 3];
+	let mut dir = [0.0; 3];
+	let mut rot = [0.0; 3];
+	let mut anchor = [0.0; 3];
+
+	pos[0] = video.pos_x.interpolate(frame);
+	pos[1] = video.pos_y.interpolate(frame);
+	rot[2] = video.rot_z.interpolate(frame);
+	scale[0] = video.scale_x.interpolate(frame);
+	scale[1] = video.scale_y.interpolate(frame);
+	anchor[0] = video.anchor_x.interpolate(frame);
+	anchor[1] = video.anchor_y.interpolate(frame);
+	*opacity = *opacity * video.opacity.interpolate(frame).clamp(0.0, 1.0);
+
+	if let Some(_3d) = &video._3d {
+		pos[2] = -_3d.pos_z.interpolate(frame);
+		dir[0] = _3d.dir_x.interpolate(frame);
+		dir[1] = _3d.dir_y.interpolate(frame);
+		dir[2] = _3d.dir_z.interpolate(frame);
+		rot[0] = _3d.rot_x.interpolate(frame);
+		rot[1] = _3d.rot_y.interpolate(frame);
+		scale[2] = _3d.scale_z.interpolate(frame);
+		anchor[2] = _3d.anchor_z.interpolate(frame);
+	}
+
+	m.w = m.x * pos[0] + m.y * pos[1] + m.z * -pos[2] + m.w;
+	if dir[0] > 0.0 {
+		let rad = -dir[0].to_radians();
+		let y = m.y;
+		let z = m.z;
+		m.y = y * rad.cos() + z * rad.sin();
+		m.z = y * -rad.sin() + z * rad.cos();
+	}
+	if dir[1] > 0.0 {
+		let rad = -dir[1].to_radians();
+		let x = m.x;
+		let z = m.z;
+		m.x = x * rad.cos() + z * -rad.sin();
+		m.z = x * rad.sin() + z * rad.cos();
+	}
+	if dir[2] > 0.0 {
+		let rad = dir[2].to_radians();
+		let x = m.x;
+		let y = m.y;
+		m.x = x * rad.cos() + y * rad.sin();
+		m.y = x * -rad.sin() + y * rad.cos();
+	}
+
+	if rot[0] > 0.0 {
+		let rad = -rot[0].to_radians();
+		let y = m.y;
+		let z = m.z;
+		m.y = y * rad.cos() + z * rad.sin();
+		m.z = y * -rad.sin() + z * rad.cos();
+	}
+	if rot[1] > 0.0 {
+		let rad = -rot[1].to_radians();
+		let x = m.x;
+		let z = m.z;
+		m.x = x * rad.cos() + z * -rad.sin();
+		m.z = x * rad.sin() + z * rad.cos();
+	}
+	if rot[2] > 0.0 {
+		let rad = rot[2].to_radians();
+		let x = m.x;
+		let y = m.y;
+		m.x = x * rad.cos() + y * rad.sin();
+		m.y = x * -rad.sin() + y * rad.cos();
+	}
+
+	m.x = m.x * scale[0];
+	m.y = m.y * scale[1];
+	m.z = m.z * scale[2];
+	m.w = m.x * -anchor[0] + m.y * -anchor[1] + m.z * -anchor[2] + m.w;
+}
+
 pub struct AetCompNode {
-	pub layers: Vec<AetLayerNode>,
+	pub layers: Vec<Rc<Mutex<AetLayerNode>>>,
+}
+
+impl PartialEq for AetCompNode {
+	fn eq(&self, other: &Self) -> bool {
+		self.layers.len() == other.layers.len()
+			&& self
+				.layers
+				.iter()
+				.zip(other.layers.iter())
+				.all(|(a, b)| Rc::ptr_eq(a, b))
+	}
+}
+
+// Here we want a deep clone rather than a shallow clone for undoer
+impl Clone for AetCompNode {
+	fn clone(&self) -> Self {
+		AetCompNode {
+			layers: self
+				.layers
+				.iter()
+				.map(|layer| Rc::new(Mutex::new(layer.try_lock().unwrap().clone())))
+				.collect(),
+		}
+	}
 }
 
 impl AetCompNode {
-	fn create(comp: aet::Composition) -> Self {
+	fn create(
+		comp: &aet::Composition,
+	) -> (Self, Vec<(Rc<Mutex<aet::Layer>>, Rc<Mutex<AetLayerNode>>)>) {
+		let mut map = Vec::new();
 		let layers = comp
 			.layers
-			.into_iter()
-			.map(|layer| {
-				let item = match layer.item {
+			.iter()
+			.map(|layer_rc| {
+				let layer = layer_rc.try_lock().unwrap();
+				let item = match &layer.item {
 					aet::Item::None => AetItemNode::None,
 					aet::Item::Video(video) => AetItemNode::Video(AetVideoNode {
 						color: video.color,
@@ -682,9 +878,9 @@ impl AetCompNode {
 						fpf: video.fpf,
 						sources: video
 							.sources
-							.into_iter()
+							.iter()
 							.map(|source| AetVideoSourceNode {
-								name: source.name,
+								name: source.name.clone(),
 								id: source.id,
 								sprite: None,
 							})
@@ -693,10 +889,15 @@ impl AetCompNode {
 					aet::Item::Audio(audio) => AetItemNode::Audio(AetAudioNode {
 						sound_index: audio.sound_index,
 					}),
-					aet::Item::Composition(comp) => AetItemNode::Comp(Self::create(comp)),
+					aet::Item::Composition(comp) => {
+						let (comp, new_map) = Self::create(comp);
+						map.extend(new_map);
+						AetItemNode::Comp(comp)
+					}
 				};
-				AetLayerNode {
-					name: layer.name,
+
+				let rc = Rc::new(Mutex::new(AetLayerNode {
+					name: layer.name.clone(),
 					start_time: layer.start_time,
 					end_time: layer.end_time,
 					offset_time: layer.offset_time,
@@ -704,9 +905,10 @@ impl AetCompNode {
 					flags: layer.flags,
 					quality: layer.quality,
 					item,
-					markers: layer.markers,
-					video: layer.video,
-					audio: layer.audio,
+					markers: layer.markers.clone(),
+					video: layer.video.clone(),
+					parent: unsafe { std::mem::transmute(layer.parent.clone()) },
+					audio: layer.audio.clone(),
 
 					sprites: Rc::new(Mutex::new(Vec::new())),
 
@@ -715,14 +917,19 @@ impl AetCompNode {
 
 					want_deletion: false,
 					want_duplicate: false,
-				}
+				}));
+
+				map.push((layer_rc.clone(), rc.clone()));
+
+				rc
 			})
 			.collect();
-		Self { layers }
+		(Self { layers }, map)
 	}
 
 	pub fn get_sprite_id(&self) -> Option<u32> {
 		for layer in &self.layers {
+			let layer = layer.try_lock().unwrap();
 			match &layer.item {
 				AetItemNode::None => {}
 				AetItemNode::Video(video) => return video.sources.first().map(|source| source.id),
@@ -743,6 +950,7 @@ impl AetCompNode {
 		spr_set: &crate::spr::SpriteSetNode,
 	) {
 		for layer in &mut self.layers {
+			let mut layer = layer.try_lock().unwrap();
 			layer.sprites = spr_set.sprites_node.children.clone();
 			match &mut layer.item {
 				AetItemNode::None => {}
@@ -750,9 +958,9 @@ impl AetCompNode {
 					for source in &mut video.sources {
 						let mut index = None;
 						for set in &spr_db.sets {
-							let set = set.lock().unwrap();
+							let set = set.try_lock().unwrap();
 							for entry in &set.entries {
-								let entry = entry.lock().unwrap();
+								let entry = entry.try_lock().unwrap();
 								if entry.id != source.id || entry.texture {
 									continue;
 								}
@@ -766,7 +974,7 @@ impl AetCompNode {
 						let Some(index) = index else {
 							continue;
 						};
-						let sprs = spr_set.sprites_node.children.lock().unwrap();
+						let sprs = spr_set.sprites_node.children.try_lock().unwrap();
 						let Some(sprite) = sprs.iter().skip(index as usize).next() else {
 							continue;
 						};
@@ -789,6 +997,7 @@ impl AetCompNode {
 		videos: &mut WgpuAetVideos,
 	) {
 		for layer in self.layers.iter().rev() {
+			let layer = layer.try_lock().unwrap();
 			if frame < layer.start_time
 				|| frame >= layer.end_time
 				|| !layer.flags.video_active()
@@ -798,84 +1007,15 @@ impl AetCompNode {
 			}
 
 			let mut m = mat;
-			let mut pos = [0.0; 3];
-			let mut scale = [1.0; 3];
-			let mut dir = [0.0; 3];
-			let mut rot = [0.0; 3];
-			let mut anchor = [0.0; 3];
 			let mut opacity = opacity;
-
+			if let Some(parent) = &layer.parent
+				&& let Some(video) = &parent.try_lock().unwrap().video
+			{
+				calc_mat(&mut m, &mut opacity, video, frame);
+			}
 			if let Some(video) = &layer.video {
-				pos[0] = video.pos_x.interpolate(frame);
-				pos[1] = video.pos_y.interpolate(frame);
-				rot[2] = video.rot_z.interpolate(frame);
-				scale[0] = video.scale_x.interpolate(frame);
-				scale[1] = video.scale_y.interpolate(frame);
-				anchor[0] = video.anchor_x.interpolate(frame);
-				anchor[1] = video.anchor_y.interpolate(frame);
-				opacity *= video.opacity.interpolate(frame).clamp(0.0, 1.0);
-
-				if let Some(_3d) = &video._3d {
-					pos[2] = -_3d.pos_z.interpolate(frame);
-					dir[0] = _3d.dir_x.interpolate(frame);
-					dir[1] = _3d.dir_y.interpolate(frame);
-					dir[2] = _3d.dir_z.interpolate(frame);
-					rot[0] = _3d.rot_x.interpolate(frame);
-					rot[1] = _3d.rot_y.interpolate(frame);
-					scale[2] = _3d.scale_z.interpolate(frame);
-					anchor[2] = _3d.anchor_z.interpolate(frame);
-				}
+				calc_mat(&mut m, &mut opacity, video, frame);
 			}
-
-			m.w = m.x * pos[0] + m.y * pos[1] + m.z * -pos[2] + m.w;
-			if dir[0] > 0.0 {
-				let rad = -dir[0].to_radians();
-				let y = m.y;
-				let z = m.z;
-				m.y = y * rad.cos() + z * rad.sin();
-				m.z = y * -rad.sin() + z * rad.cos();
-			}
-			if dir[1] > 0.0 {
-				let rad = -dir[1].to_radians();
-				let x = m.x;
-				let z = m.z;
-				m.x = x * rad.cos() + z * -rad.sin();
-				m.z = x * rad.sin() + z * rad.cos();
-			}
-			if dir[2] > 0.0 {
-				let rad = dir[2].to_radians();
-				let x = m.x;
-				let y = m.y;
-				m.x = x * rad.cos() + y * rad.sin();
-				m.y = x * -rad.sin() + y * rad.cos();
-			}
-
-			if rot[0] > 0.0 {
-				let rad = -rot[0].to_radians();
-				let y = m.y;
-				let z = m.z;
-				m.y = y * rad.cos() + z * rad.sin();
-				m.z = y * -rad.sin() + z * rad.cos();
-			}
-			if rot[1] > 0.0 {
-				let rad = -rot[1].to_radians();
-				let x = m.x;
-				let z = m.z;
-				m.x = x * rad.cos() + z * -rad.sin();
-				m.z = x * rad.sin() + z * rad.cos();
-			}
-			if rot[2] > 0.0 {
-				let rad = rot[2].to_radians();
-				let x = m.x;
-				let y = m.y;
-				m.x = x * rad.cos() + y * rad.sin();
-				m.y = x * -rad.sin() + y * rad.cos();
-			}
-
-			m.x = m.x * scale[0];
-			m.y = m.y * scale[1];
-			m.z = m.z * scale[2];
-			m.w = m.x * -anchor[0] + m.y * -anchor[1] + m.z * -anchor[2] + m.w;
 
 			match &layer.item {
 				AetItemNode::None => {}
@@ -902,8 +1042,8 @@ impl AetCompNode {
 						continue;
 					};
 
-					let sprite = sprite.lock().unwrap();
-					let texture = sprite.texture.lock().unwrap();
+					let sprite = sprite.try_lock().unwrap();
+					let texture = sprite.texture.try_lock().unwrap();
 					let mip = texture.texture.get_mipmap(0, 0).unwrap();
 					let x = sprite.info.px() / mip.width() as f32;
 					let y = (mip.height() as f32 - sprite.info.py() - sprite.info.height())
@@ -951,16 +1091,18 @@ impl AetCompNode {
 		let Some(layer) = self.layers.get_mut(desired_index) else {
 			return;
 		};
+		let mut layer = layer.try_lock().unwrap();
 		let mut path = path.to_vec();
 		path.push(index);
 
+		let adjusted_frame = (frame - layer.start_time) * layer.time_scale + layer.offset_time;
 		if depth + 1 == desired_path.len() - 1 {
 			layer.display_curve_editor(ui, selected_curve, frame);
 		} else if let AetItemNode::Comp(comp) = &mut layer.item {
 			comp.show_node_curve_editor(
 				ui,
 				selected_curve,
-				(frame - layer.start_time) * layer.time_scale + layer.offset_time,
+				adjusted_frame,
 				index,
 				depth + 1,
 				&path,
@@ -969,11 +1111,18 @@ impl AetCompNode {
 		}
 	}
 
-	fn to_kkdlib(&self) -> aet::Composition {
+	fn to_kkdlib(
+		&self,
+	) -> (
+		aet::Composition,
+		Vec<(Rc<Mutex<AetLayerNode>>, Rc<Mutex<aet::Layer>>)>,
+	) {
+		let mut map = Vec::new();
 		let layers = self
 			.layers
 			.iter()
-			.map(|layer| {
+			.map(|layer_rc| {
+				let layer = layer_rc.try_lock().unwrap();
 				let item = match &layer.item {
 					AetItemNode::None => aet::Item::None,
 					AetItemNode::Video(video) => aet::Item::Video(aet::Video {
@@ -986,8 +1135,8 @@ impl AetCompNode {
 							.iter()
 							.map(|source| {
 								let (name, id) = if let Some(sprite) = &source.sprite {
-									if let Some(db_entry) = &sprite.lock().unwrap().db_entry {
-										let db_entry = db_entry.lock().unwrap();
+									if let Some(db_entry) = &sprite.try_lock().unwrap().db_entry {
+										let db_entry = db_entry.try_lock().unwrap();
 										(db_entry.name.clone(), db_entry.id)
 									} else {
 										(source.name.clone(), source.id)
@@ -1002,9 +1151,14 @@ impl AetCompNode {
 					AetItemNode::Audio(audio) => aet::Item::Audio(aet::Audio {
 						sound_index: audio.sound_index,
 					}),
-					AetItemNode::Comp(comp) => aet::Item::Composition(comp.to_kkdlib()),
+					AetItemNode::Comp(comp) => {
+						let (comp, new_map) = comp.to_kkdlib();
+						map.extend(new_map);
+						aet::Item::Composition(comp)
+					}
 				};
-				aet::Layer {
+
+				let rc = Rc::new(Mutex::new(aet::Layer {
 					name: layer.name.clone(),
 					start_time: layer.start_time,
 					end_time: layer.end_time,
@@ -1015,12 +1169,17 @@ impl AetCompNode {
 					item,
 					markers: layer.markers.clone(),
 					video: layer.video.clone(),
+					parent: unsafe { std::mem::transmute(layer.parent.clone()) },
 					audio: layer.audio.clone(),
-				}
+				}));
+
+				map.push((layer_rc.clone(), rc.clone()));
+
+				rc
 			})
 			.collect();
 
-		aet::Composition { layers }
+		(aet::Composition { layers }, map)
 	}
 
 	fn display_tree(
@@ -1031,37 +1190,56 @@ impl AetCompNode {
 		frame: &mut eframe::Frame,
 	) -> egui::Response {
 		let mut last_resp = None;
-		let resp = egui_dnd::dnd(ui, ui.id()).show(
-			self.layers.iter_mut().enumerate(), // Use index in hash
-			|ui, (_, layer), mut handle, state| {
-				ui.horizontal(|ui| {
-					let resp = crate::app::show_node(ui, layer, state.index, path, selected, frame);
+		let resp = egui_dnd::dnd(ui, ui.id()).show_custom(|ui, iter| {
+			for (i, layer) in self.layers.iter_mut().enumerate() {
+				let mut layer = layer.try_lock().unwrap();
+				iter.next(
+					ui,
+					egui::Id::new(&layer.name).with(i),
+					i,
+					true,
+					|ui, item_handle| {
+						item_handle.ui(ui, |ui, mut handle, state| {
+							ui.horizontal(|ui| {
+								let resp = crate::app::show_node(
+									ui,
+									&mut *layer,
+									state.index,
+									path,
+									selected,
+									frame,
+								);
 
-					let rect = egui::Rect {
-						min: egui::pos2(
-							resp.rect.max.x + ui.spacing().item_spacing.x,
-							resp.rect.min.y,
-						),
-						max: egui::pos2(
-							resp.rect.max.x + ui.available_size().x - ui.spacing().item_spacing.x,
-							resp.rect.min.y + ui.text_style_height(&egui::TextStyle::Body)
-								- ui.spacing().item_spacing.y,
-						),
-					};
+								let rect = egui::Rect {
+									min: egui::pos2(
+										resp.rect.max.x + ui.spacing().item_spacing.x,
+										resp.rect.min.y,
+									),
+									max: egui::pos2(
+										resp.rect.max.x + ui.available_size().x
+											- ui.spacing().item_spacing.x,
+										resp.rect.min.y
+											+ ui.text_style_height(&egui::TextStyle::Body)
+											- ui.spacing().item_spacing.y,
+									),
+								};
 
-					handle.handle_response(
-						ui.interact(
-							rect,
-							egui::Id::new(&layer.name).with(state.index).with("dnd"),
-							egui::Sense::click_and_drag(),
-						),
-						ui,
-					);
+								handle.handle_response(
+									ui.interact(
+										rect,
+										egui::Id::new(&layer.name).with(state.index).with("dnd"),
+										egui::Sense::click_and_drag(),
+									),
+									ui,
+								);
 
-					last_resp = Some(resp);
-				});
-			},
-		);
+								last_resp = Some(resp);
+							});
+						})
+					},
+				);
+			}
+		});
 
 		if let Some(update) = &resp.final_update() {
 			let layer = self.layers.remove(update.from);
@@ -1131,6 +1309,7 @@ pub struct AetLayerNode {
 	pub item: AetItemNode,
 	pub markers: Vec<(String, f32)>,
 	pub video: Option<aet::LayerVideo>,
+	pub parent: Option<Rc<Mutex<AetLayerNode>>>,
 	pub audio: Option<aet::LayerAudio>,
 
 	pub sprites: Rc<Mutex<Vec<Rc<Mutex<crate::spr::SpriteInfoNode>>>>>,
@@ -1195,7 +1374,8 @@ impl TreeNode for AetLayerNode {
 		match &mut self.item {
 			AetItemNode::Comp(comp) => {
 				for layer in &mut comp.layers {
-					f(layer);
+					let mut lock = layer.try_lock().unwrap();
+					f(&mut *lock);
 				}
 			}
 			_ => {}
@@ -1224,13 +1404,14 @@ impl TreeNode for AetLayerNode {
 
 						comp.display_tree(ui, path, selected, frame);
 
-						comp.layers.retain(|layer| !layer.want_deletion);
+						comp.layers
+							.retain(|layer| !layer.try_lock().unwrap().want_deletion);
 
 						for i in comp
 							.layers
 							.iter()
 							.enumerate()
-							.filter(|(_, layer)| layer.want_duplicate)
+							.filter(|(_, layer)| layer.try_lock().unwrap().want_duplicate)
 							.map(|(i, _)| i)
 							.collect::<Vec<_>>()
 						{
@@ -1238,7 +1419,7 @@ impl TreeNode for AetLayerNode {
 						}
 
 						for layer in &mut comp.layers {
-							layer.want_duplicate = false;
+							layer.try_lock().unwrap().want_duplicate = false;
 						}
 					},
 				)
@@ -1303,6 +1484,18 @@ impl TreeNode for AetLayerNode {
 							.ui(ui);
 					});
 				});
+
+				if let Some(parent) = &self.parent {
+					let parent = parent.lock().unwrap();
+					body.row(height, |mut row| {
+						row.col(|ui| {
+							ui.label("Parent");
+						});
+						row.col(|ui| {
+							ui.label(&parent.name);
+						});
+					});
+				}
 
 				let mut has_audio = self.audio.is_some();
 				let mut has_video = self.video.is_some();
@@ -1429,6 +1622,92 @@ impl TreeNode for AetLayerNode {
 					});
 				}
 
+				/* Real blend modes
+				 * Normal: wgpu::BlendState {
+						color: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::SrcAlpha,
+							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+							operation: wgpu::BlendOperation::Add,
+						},
+						alpha: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::Zero,
+							dst_factor: wgpu::BlendFactor::One,
+							operation: wgpu::BlendOperation::Add,
+						},
+					},
+				 * Screen: wgpu::BlendState {
+						color: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::SrcAlpha,
+							dst_factor: wgpu::BlendFactor::OneMinusSrc,
+							operation: wgpu::BlendOperation::Add,
+						},
+						alpha: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::Zero,
+							dst_factor: wgpu::BlendFactor::One,
+							operation: wgpu::BlendOperation::Add,
+						},
+					},
+				 * Add: wgpu::BlendState {
+						color: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::SrcAlpha,
+							dst_factor: wgpu::BlendFactor::One,
+							operation: wgpu::BlendOperation::Add,
+						},
+						alpha: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::Zero,
+							dst_factor: wgpu::BlendFactor::One,
+							operation: wgpu::BlendOperation::Add,
+						},
+					},
+				 * Multiply (Combiner 1): wgpu::BlendState {
+						color: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::Dst,
+							dst_factor: wgpu::BlendFactor::Zero,
+							operation: wgpu::BlendOperation::Add,
+						},
+						alpha: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::Zero,
+							dst_factor: wgpu::BlendFactor::One,
+							operation: wgpu::BlendOperation::Add,
+						},
+					},
+				* Overlay (Combiner 2): wgpu::BlendState {
+					color: wgpu::BlendComponent {
+						src_factor: wgpu::BlendFactor::SrcAlpha,
+						dst_factor: wgpu::BlendFactor::OneMinusSrc,
+						operation: wgpu::BlendOperation::Add,
+					},
+					alpha: wgpu::BlendComponent {
+						src_factor: wgpu::BlendFactor::Zero,
+						dst_factor: wgpu::BlendFactor::One,
+						operation: wgpu::BlendOperation::Add,
+					},
+				},
+				 */
+
+				if let Some(video) = &mut self.video {
+					body.row(height, |mut row| {
+						row.col(|ui| {
+							ui.label("Blend mode");
+						});
+						row.col(|ui| {
+							egui::ComboBox::from_id_salt("BlendModeComboBox")
+								.selected_text(format!("{:?}", video.transfer_mode.mode))
+								.show_ui(ui, |ui| {
+									for i in 0..40 {
+										let blend_mode =
+											unsafe { std::mem::transmute::<u8, aet::BlendMode>(i) };
+										ui.selectable_value(
+											&mut video.transfer_mode.mode,
+											blend_mode,
+											format!("{:?}", blend_mode),
+										);
+									}
+								});
+						});
+					});
+				}
+
 				body.row(height, |mut row| {
 					row.col(|ui| {
 						ui.label("Child");
@@ -1543,7 +1822,7 @@ impl TreeNode for AetLayerNode {
 									video.sources.push(AetVideoSourceNode {
 										name: String::new(),
 										id: 0,
-										sprite: self.sprites.lock().unwrap().first().cloned(),
+										sprite: self.sprites.try_lock().unwrap().first().cloned(),
 									});
 								}
 							});
@@ -1553,11 +1832,11 @@ impl TreeNode for AetLayerNode {
 							let Some(sprite) = &source.sprite else {
 								continue;
 							};
-							let sprite = sprite.lock().unwrap();
+							let sprite = sprite.try_lock().unwrap();
 							let Some(db_entry) = &sprite.db_entry else {
 								continue;
 							};
-							let db_entry = db_entry.lock().unwrap();
+							let db_entry = db_entry.try_lock().unwrap();
 							source.id = db_entry.id;
 							let sprite_name = sprite.name.clone();
 							let old_selected_sprite = db_entry.id;
@@ -1571,12 +1850,12 @@ impl TreeNode for AetLayerNode {
 									egui::ComboBox::from_id_salt(format!("Source{i}ComboBox"))
 										.selected_text(&sprite_name)
 										.show_ui(ui, |ui| {
-											for sprite in self.sprites.lock().unwrap().iter() {
-												let sprite = sprite.lock().unwrap();
+											for sprite in self.sprites.try_lock().unwrap().iter() {
+												let sprite = sprite.try_lock().unwrap();
 												let Some(db_entry) = &sprite.db_entry else {
 													continue;
 												};
-												let db_entry = db_entry.lock().unwrap();
+												let db_entry = db_entry.try_lock().unwrap();
 												ui.selectable_value(
 													&mut selected_sprite,
 													db_entry.id,
@@ -1594,7 +1873,7 @@ impl TreeNode for AetLayerNode {
 									.unwrap()
 									.iter()
 									.find(|spr| {
-										spr.lock().unwrap().db_entry.is_some()
+										spr.try_lock().unwrap().db_entry.is_some()
 											&& spr
 												.lock()
 												.unwrap()
@@ -1663,7 +1942,7 @@ impl TreeNode for AetLayerNode {
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
 		if let AetItemNode::Comp(comp) = &mut self.item {
 			if ui.button("Add").clicked() {
-				comp.layers.push(AetLayerNode {
+				comp.layers.push(Rc::new(Mutex::new(AetLayerNode {
 					name: String::from("DUMMY"),
 					start_time: 0.0,
 					end_time: self.end_time - self.start_time,
@@ -1674,13 +1953,14 @@ impl TreeNode for AetLayerNode {
 					item: AetItemNode::None,
 					markers: Vec::new(),
 					video: None,
+					parent: None,
 					audio: None,
 					sprites: self.sprites.clone(),
 					visible: self.visible,
 					selected_key: 0,
 					want_deletion: false,
 					want_duplicate: false,
-				})
+				})))
 			}
 		};
 
@@ -2121,7 +2401,7 @@ impl AetLayerNode {
 			&& a.layers.len() == b.layers.len()
 		{
 			for (a, b) in a.layers.iter_mut().zip(b.layers.iter()) {
-				a.update_from(b);
+				a.try_lock().unwrap().update_from(&b.try_lock().unwrap());
 			}
 		} else {
 			self.item = other.item.clone();

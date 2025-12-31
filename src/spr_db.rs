@@ -24,7 +24,7 @@ impl TreeNode for SprDbNode {
 
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
 		for set in &mut self.sets {
-			let mut set = set.lock().unwrap();
+			let mut set = set.try_lock().unwrap();
 			f(&mut *set);
 		}
 	}
@@ -37,14 +37,14 @@ impl TreeNode for SprDbNode {
 		spr_db.set_is_x(self.is_x);
 
 		for set in &self.sets {
-			let set = set.lock().unwrap();
+			let set = set.try_lock().unwrap();
 			let mut db_set = file::Set::new();
 			db_set.set_id(set.id);
 			db_set.set_name(&set.name);
 			db_set.set_file_name(&set.file_name);
 
 			for entry in &set.entries {
-				let entry = entry.lock().unwrap();
+				let entry = entry.try_lock().unwrap();
 				let mut db_entry = file::Entry::new();
 				db_entry.set_id(entry.id);
 				db_entry.set_name(&entry.name);
@@ -152,7 +152,7 @@ impl TreeNode for SprDbSetNode {
 
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
 		for entry in &mut self.entries {
-			let mut entry = entry.lock().unwrap();
+			let mut entry = entry.try_lock().unwrap();
 			f(&mut *entry);
 		}
 	}

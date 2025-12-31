@@ -34,8 +34,8 @@ impl TreeNode for SpriteSetNode {
 
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
 		f(&mut self.sprites_node);
-		for sprite in self.sprites_node.children.lock().unwrap().iter_mut() {
-			let mut sprite = sprite.lock().unwrap();
+		for sprite in self.sprites_node.children.try_lock().unwrap().iter_mut() {
+			let mut sprite = sprite.try_lock().unwrap();
 			if let Some(texid) = sprite.want_new_texture {
 				sprite.texture = self.textures_node.children[texid as usize].clone();
 			}
@@ -43,12 +43,12 @@ impl TreeNode for SpriteSetNode {
 		}
 		f(&mut self.textures_node);
 
-		self.texture_names.lock().unwrap().clone_from(
+		self.texture_names.try_lock().unwrap().clone_from(
 			&self
 				.textures_node
 				.children
 				.iter()
-				.map(|child| child.lock().unwrap().name.clone())
+				.map(|child| child.try_lock().unwrap().name.clone())
 				.collect(),
 		);
 	}
@@ -59,13 +59,13 @@ impl TreeNode for SpriteSetNode {
 		let mut spr_set = spr::Set::new();
 
 		for texture in &self.textures_node.children {
-			let texture = &texture.lock().unwrap();
+			let texture = &texture.try_lock().unwrap();
 			txp_set.add_file(&texture.texture);
 			tex_names.push(texture.name.clone());
 		}
 
-		for sprite in self.sprites_node.children.lock().unwrap().iter() {
-			let sprite = sprite.lock().unwrap();
+		for sprite in self.sprites_node.children.try_lock().unwrap().iter() {
+			let sprite = sprite.try_lock().unwrap();
 			spr_set.add_spr(&sprite.info, &sprite.name);
 		}
 		spr_set.set_txp(&txp_set, tex_names);
@@ -122,7 +122,7 @@ impl TreeNode for SpriteSetNode {
 				});
 
 				if let Some(db_set) = &mut self.db_set {
-					let mut db_set = db_set.lock().unwrap();
+					let mut db_set = db_set.try_lock().unwrap();
 					body.row(height, |mut row| {
 						row.col(|ui| {
 							ui.label("ID");
@@ -169,7 +169,7 @@ impl SpriteSetNode {
 			textures_node
 				.children
 				.iter()
-				.map(|child| child.lock().unwrap().name.clone())
+				.map(|child| child.try_lock().unwrap().name.clone())
 				.collect(),
 		));
 		Self {
@@ -186,7 +186,7 @@ impl SpriteSetNode {
 	}
 
 	pub fn add_db(&mut self, db_set: Rc<Mutex<SprDbSetNode>>) {
-		let set = db_set.lock().unwrap();
+		let set = db_set.try_lock().unwrap();
 		for (i, sprite) in self
 			.sprites_node
 			.children
@@ -195,24 +195,24 @@ impl SpriteSetNode {
 			.iter_mut()
 			.enumerate()
 		{
-			let mut sprite = sprite.lock().unwrap();
+			let mut sprite = sprite.try_lock().unwrap();
 			sprite.db_entry = set
 				.entries
 				.iter()
 				.find(|entry| {
-					let entry = entry.lock().unwrap();
+					let entry = entry.try_lock().unwrap();
 					entry.index == i as u16 && entry.texture == false
 				})
 				.cloned();
 		}
 
 		for (i, texture) in self.textures_node.children.iter_mut().enumerate() {
-			let mut texture = texture.lock().unwrap();
+			let mut texture = texture.try_lock().unwrap();
 			texture.db_entry = set
 				.entries
 				.iter()
 				.find(|entry| {
-					let entry = entry.lock().unwrap();
+					let entry = entry.try_lock().unwrap();
 					entry.index == i as u16 && entry.texture == true
 				})
 				.cloned();
@@ -224,26 +224,26 @@ impl SpriteSetNode {
 
 	pub fn update_db_entries(&mut self) {
 		let Some(set) = &self.db_set else { return };
-		let mut set = set.lock().unwrap();
+		let mut set = set.try_lock().unwrap();
 		set.entries.clear();
 
-		for sprite in self.sprites_node.children.lock().unwrap().iter() {
-			let sprite = sprite.lock().unwrap();
+		for sprite in self.sprites_node.children.try_lock().unwrap().iter() {
+			let sprite = sprite.try_lock().unwrap();
 			let Some(db_entry) = &sprite.db_entry else {
 				return;
 			};
-			let mut entry = db_entry.lock().unwrap();
+			let mut entry = db_entry.try_lock().unwrap();
 			entry.name = format!("{}_{}", set.name, sprite.name);
 
 			set.entries.push(db_entry.clone());
 		}
 
 		for tex in &self.textures_node.children {
-			let tex = tex.lock().unwrap();
+			let tex = tex.try_lock().unwrap();
 			let Some(db_entry) = &tex.db_entry else {
 				return;
 			};
-			let mut entry = db_entry.lock().unwrap();
+			let mut entry = db_entry.try_lock().unwrap();
 			entry.name = format!("{}_{}", set.name.replace("SPR_", "SPRTEX_"), tex.name);
 
 			set.entries.push(db_entry.clone());
@@ -295,7 +295,7 @@ impl SpriteSetNode {
 		);
 
 		for texture in &self.textures_node.children {
-			let tex = texture.lock().unwrap();
+			let tex = texture.try_lock().unwrap();
 
 			let Some(mip) = tex.texture.get_mipmap(0, 0) else {
 				continue;
@@ -531,9 +531,9 @@ impl TreeNode for SpriteInfosNode {
 	}
 
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
-		self.children.lock().unwrap().retain_mut(|spr| {
-			let mut spr = spr.lock().unwrap();
-			let texid = spr.texture.lock().unwrap().index;
+		self.children.try_lock().unwrap().retain_mut(|spr| {
+			let mut spr = spr.try_lock().unwrap();
+			let texid = spr.texture.try_lock().unwrap().index;
 			spr.info.set_texid(texid);
 			f(&mut *spr);
 			!spr.want_deletion
@@ -549,7 +549,7 @@ impl TreeNode for SpriteInfosNode {
 			info.set_width(2.0);
 			info.set_height(2.0);
 			info.set_resolution_mode(spr::ResolutionMode::FHD);
-			let len = self.children.lock().unwrap().len();
+			let len = self.children.try_lock().unwrap().len();
 
 			self.children
 				.lock()
@@ -651,7 +651,7 @@ impl SpriteInfoNode {
 			return;
 		};
 
-		let mut texture = self.texture.lock().unwrap();
+		let mut texture = self.texture.try_lock().unwrap();
 		let mip = texture.texture.get_mipmap(0, 0).unwrap();
 
 		if self.exporting {
@@ -830,12 +830,12 @@ impl TreeNode for SpriteInfoNode {
 					});
 					row.col(|ui| {
 						let mut texture = self.info.texid();
-						let tex_name = &self.texture.lock().unwrap().name;
+						let tex_name = &self.texture.try_lock().unwrap().name;
 						egui::ComboBox::from_id_salt("TextureComboBox")
 							.selected_text(tex_name)
 							.show_ui(ui, |ui| {
 								for (id, name) in
-									self.texture_names.lock().unwrap().iter().enumerate()
+									self.texture_names.try_lock().unwrap().iter().enumerate()
 								{
 									ui.selectable_value(&mut texture, id as u32, name);
 								}
@@ -932,7 +932,7 @@ impl TreeNode for SpriteInfoNode {
 				});
 
 				if let Some(db_entry) = &mut self.db_entry {
-					let mut db_entry = db_entry.lock().unwrap();
+					let mut db_entry = db_entry.try_lock().unwrap();
 
 					body.row(height, |mut row| {
 						row.col(|ui| {
@@ -959,7 +959,7 @@ impl TreeNode for SpriteInfoNode {
 	}
 
 	fn selected(&mut self, frame: &mut eframe::Frame) {
-		self.texture.lock().unwrap().selected(frame);
+		self.texture.try_lock().unwrap().selected(frame);
 	}
 
 	fn display_visual(
@@ -967,7 +967,7 @@ impl TreeNode for SpriteInfoNode {
 		_ui: &mut egui::Ui,
 		rect: egui::Rect,
 	) -> Option<egui::epaint::PaintCallback> {
-		let texture = self.texture.lock().unwrap();
+		let texture = self.texture.try_lock().unwrap();
 
 		let w = rect.max.x - rect.min.x;
 		let h = rect.max.y - rect.min.y;

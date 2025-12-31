@@ -38,13 +38,13 @@ impl TreeNode for TextureSetNode {
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
 		let old_len = self.children.len();
 		self.children.retain_mut(|tex| {
-			let mut tex = tex.lock().unwrap();
+			let mut tex = tex.try_lock().unwrap();
 			f(&mut *tex);
 			!tex.want_deletion
 		});
 		if old_len != self.children.len() {
 			for (i, child) in self.children.iter_mut().enumerate() {
-				child.lock().unwrap().index = i as u32;
+				child.try_lock().unwrap().index = i as u32;
 			}
 			self.children_changed = true;
 		}
@@ -124,7 +124,7 @@ impl TreeNode for TextureSetNode {
 				flip: self
 					.children
 					.first()
-					.map_or(true, |tex| tex.lock().unwrap().flip),
+					.map_or(true, |tex| tex.try_lock().unwrap().flip),
 				index: self.children.len() as u32,
 				texture_updated: true,
 				db_entry: None,
@@ -138,7 +138,7 @@ impl TreeNode for TextureSetNode {
 	fn raw_data(&self) -> Vec<u8> {
 		let mut set = txp::Set::new();
 		for child in &self.children {
-			let texture = child.lock().unwrap();
+			let texture = child.try_lock().unwrap();
 			set.add_file(&texture.texture);
 		}
 
@@ -545,7 +545,7 @@ impl TreeNode for TextureNode {
 				});
 
 				if let Some(db_entry) = &mut self.db_entry {
-					let mut db_entry = db_entry.lock().unwrap();
+					let mut db_entry = db_entry.try_lock().unwrap();
 
 					body.row(height, |mut row| {
 						row.col(|ui| {
@@ -806,7 +806,11 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 						dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
 						operation: wgpu::BlendOperation::Add,
 					},
-					alpha: wgpu::BlendComponent::OVER,
+					alpha: wgpu::BlendComponent {
+						src_factor: wgpu::BlendFactor::Zero,
+						dst_factor: wgpu::BlendFactor::One,
+						operation: wgpu::BlendOperation::Add,
+					},
 				}),
 				write_mask: wgpu::ColorWrites::ALL,
 			})],

@@ -454,10 +454,10 @@ impl App {
 						.unwrap()
 						.entries
 						.iter()
-						.any(|entry| entry.lock().unwrap().id == sprite_id)
+						.any(|entry| entry.try_lock().unwrap().id == sprite_id)
 				}) && self.sprite_set.is_none()
 			{
-				let set = db_set.lock().unwrap();
+				let set = db_set.try_lock().unwrap();
 				let set_name = set.file_name.clone();
 				drop(set);
 
@@ -820,18 +820,18 @@ impl eframe::App for App {
 					.textures_node
 					.children
 					.iter()
-					.any(|tex| tex.lock().unwrap().texture_updated)
+					.any(|tex| tex.try_lock().unwrap().texture_updated)
 			{
 				spr_set.init_wgpu(frame);
 
 				spr_set.textures_node.children_changed = false;
 				for texture in &mut spr_set.textures_node.children {
-					texture.lock().unwrap().texture_updated = false;
+					texture.try_lock().unwrap().texture_updated = false;
 				}
 			}
 
 			if let Some(set) = &mut spr_set.db_set {
-				let mut set = set.lock().unwrap();
+				let mut set = set.try_lock().unwrap();
 				for (i, spr) in spr_set
 					.sprites_node
 					.children
@@ -839,9 +839,9 @@ impl eframe::App for App {
 					.unwrap()
 					.iter_mut()
 					.enumerate()
-					.filter(|(_, spr)| spr.lock().unwrap().db_entry.is_none())
+					.filter(|(_, spr)| spr.try_lock().unwrap().db_entry.is_none())
 				{
-					let mut spr = spr.lock().unwrap();
+					let mut spr = spr.try_lock().unwrap();
 					let entry = Rc::new(Mutex::new(spr_db::SprDbEntryNode {
 						id: 0,
 						name: String::from("DUMMY"),
@@ -858,9 +858,9 @@ impl eframe::App for App {
 					.children
 					.iter_mut()
 					.enumerate()
-					.filter(|(_, tex)| tex.lock().unwrap().db_entry.is_none())
+					.filter(|(_, tex)| tex.try_lock().unwrap().db_entry.is_none())
 				{
-					let mut tex = tex.lock().unwrap();
+					let mut tex = tex.try_lock().unwrap();
 					let entry = Rc::new(Mutex::new(spr_db::SprDbEntryNode {
 						id: 0,
 						name: String::from("DUMMY"),
