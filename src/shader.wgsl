@@ -18,9 +18,11 @@ struct VertexInput {
 
 struct SpriteInfo {
 	matrix: mat4x4<f32>,
-	tex_coords: array<vec4<f32>, 4>, // Array stride must be 16
+	tex_coords_tl: vec2<f32>,
+	tex_coords_tr: vec2<f32>,
+	tex_coords_bl: vec2<f32>,
+	tex_coords_br: vec2<f32>,
 	color: vec4<f32>,
-	texture_index: u32,
 	is_ycbcr: u32,
 };
 
@@ -36,7 +38,13 @@ struct VertexOutput {
 fn vs_main(in: VertexInput) -> VertexOutput {
 	var out: VertexOutput;
 	out.position = spr.matrix * vec4(in.position, 0.0, 1.0);
-	out.tex_coords = spr.tex_coords[in.tex_index].xy;
+	var tex_coords = array(
+		spr.tex_coords_tl,
+		spr.tex_coords_tr,
+		spr.tex_coords_bl,
+		spr.tex_coords_br
+	);
+	out.tex_coords = tex_coords[in.tex_index];
 	return out;
 }
 

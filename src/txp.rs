@@ -619,12 +619,7 @@ impl TreeNode for TextureNode {
 
 		let spr_info = SpriteInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [
-				[0.0, 1.0, 0.0, 0.0],
-				[1.0, 1.0, 0.0, 0.0],
-				[0.0, 0.0, 0.0, 0.0],
-				[1.0, 0.0, 0.0, 0.0],
-			],
+			tex_coords: [[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]],
 			color: [1.0, 1.0, 1.0, 1.0],
 			is_ycbcr: if self.texture.is_ycbcr() { 1 } else { 0 },
 			_padding_0: 0,
@@ -740,7 +735,7 @@ pub struct Vertex {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SpriteInfo {
 	pub matrix: [[f32; 4]; 4],
-	pub tex_coords: [[f32; 4]; 4],
+	pub tex_coords: [[f32; 2]; 4],
 	pub color: [f32; 4],
 	pub is_ycbcr: u32,
 	pub _padding_0: u32,
@@ -962,12 +957,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		label: Some("Uniform buffer 0"),
 		contents: bytemuck::cast_slice(&[SpriteInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [
-				[0.0, 0.0, 0.0, 0.0],
-				[1.0, 0.0, 0.0, 0.0],
-				[0.0, 1.0, 0.0, 0.0],
-				[1.0, 1.0, 0.0, 0.0],
-			],
+			tex_coords: [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
 			color: [1.0, 1.0, 1.0, 1.0],
 			is_ycbcr: 0,
 			_padding_0: 0,

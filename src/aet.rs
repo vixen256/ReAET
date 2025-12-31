@@ -2429,12 +2429,7 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 
 		spr_infos.push(SpriteInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [
-				[0.0, 0.0, 0.0, 0.0],
-				[1.0, 0.0, 0.0, 0.0],
-				[0.0, 1.0, 0.0, 0.0],
-				[1.0, 1.0, 0.0, 0.0],
-			],
+			tex_coords: [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
 			color: [0.0, 0.0, 0.0, 1.0],
 			is_ycbcr: 0,
 			_padding_0: 0,
@@ -2482,10 +2477,10 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			SpriteInfo {
 				matrix: m.into(),
 				tex_coords: [
-					[video.texture_coords[0], video.texture_coords[3], 0.0, 0.0],
-					[video.texture_coords[2], video.texture_coords[3], 0.0, 0.0],
-					[video.texture_coords[0], video.texture_coords[1], 0.0, 0.0],
-					[video.texture_coords[2], video.texture_coords[1], 0.0, 0.0],
+					[video.texture_coords[0], video.texture_coords[3]],
+					[video.texture_coords[2], video.texture_coords[3]],
+					[video.texture_coords[0], video.texture_coords[1]],
+					[video.texture_coords[2], video.texture_coords[1]],
 				],
 				color: video.color,
 				is_ycbcr: if video.is_ycbcr { 1 } else { 0 },

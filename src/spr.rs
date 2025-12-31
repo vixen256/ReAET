@@ -1048,10 +1048,10 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 		let spr_info = SpriteInfo {
 			matrix: crate::aet::Mat4::default().into(),
 			tex_coords: [
-				[self.sprite_coords[0], self.sprite_coords[3], 0.0, 0.0],
-				[self.sprite_coords[2], self.sprite_coords[3], 0.0, 0.0],
-				[self.sprite_coords[0], self.sprite_coords[1], 0.0, 0.0],
-				[self.sprite_coords[2], self.sprite_coords[1], 0.0, 0.0],
+				[self.sprite_coords[0], self.sprite_coords[3]],
+				[self.sprite_coords[2], self.sprite_coords[3]],
+				[self.sprite_coords[0], self.sprite_coords[1]],
+				[self.sprite_coords[2], self.sprite_coords[1]],
 			],
 			color: [1.0, 1.0, 1.0, 1.0],
 			is_ycbcr: if self.is_ycbcr { 1 } else { 0 },

@@ -511,7 +511,6 @@ impl App {
 
 		if let Some(aet_set) = &self.aet_set {
 			let mut undoer = Undoer::default();
-			undoer.add_undo(aet_set);
 			self.undoer = Some(undoer);
 		}
 	}
