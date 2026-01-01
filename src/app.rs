@@ -862,7 +862,7 @@ impl eframe::App for App {
 						ctx.input(|input| {
 							scene.current_time += input.stable_dt * scene.fps;
 						});
-						ctx.request_repaint_after_secs(2.0 / scene.fps);
+						ctx.request_repaint();
 					}
 				}
 				ui.take_available_space();
