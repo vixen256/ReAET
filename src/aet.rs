@@ -208,7 +208,7 @@ impl TreeNode for AetSetNode {
 					let (root, map) = scene.root.to_kkdlib();
 
 					for (_, b) in &map {
-						let mut b = b.lock().unwrap();
+						let mut b = b.try_lock().unwrap();
 						let parent: Option<Rc<Mutex<AetLayerNode>>> =
 							unsafe { std::mem::transmute(b.parent.clone()) };
 						let Some(parent) = &parent else { continue };
@@ -252,7 +252,7 @@ impl AetSetNode {
 				let (root, map) = AetCompNode::create(&scene.root);
 
 				for (_, b) in &map {
-					let mut b = b.lock().unwrap();
+					let mut b = b.try_lock().unwrap();
 					let parent: Option<Rc<Mutex<aet::Layer>>> =
 						unsafe { std::mem::transmute(b.parent.clone()) };
 					let Some(parent) = &parent else { continue };
@@ -830,6 +830,7 @@ pub fn calc_mat(m: &mut Mat4, opacity: &mut f32, video: &aet::LayerVideo, frame:
 	m.w = m.x * -anchor[0] + m.y * -anchor[1] + m.z * -anchor[2] + m.w;
 }
 
+#[derive(Clone)]
 pub struct AetCompNode {
 	pub layers: Vec<Rc<Mutex<AetLayerNode>>>,
 }
@@ -841,20 +842,7 @@ impl PartialEq for AetCompNode {
 				.layers
 				.iter()
 				.zip(other.layers.iter())
-				.all(|(a, b)| Rc::ptr_eq(a, b))
-	}
-}
-
-// Here we want a deep clone rather than a shallow clone for undoer
-impl Clone for AetCompNode {
-	fn clone(&self) -> Self {
-		AetCompNode {
-			layers: self
-				.layers
-				.iter()
-				.map(|layer| Rc::new(Mutex::new(layer.try_lock().unwrap().clone())))
-				.collect(),
-		}
+				.all(|(a, b)| Rc::ptr_eq(a, b) || *a.try_lock().unwrap() == *b.try_lock().unwrap())
 	}
 }
 
@@ -1497,7 +1485,7 @@ impl TreeNode for AetLayerNode {
 				});
 
 				if let Some(parent) = &self.parent {
-					let parent = parent.lock().unwrap();
+					let parent = parent.try_lock().unwrap();
 					body.row(height, |mut row| {
 						row.col(|ui| {
 							ui.label("Parent");

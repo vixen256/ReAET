@@ -1,8 +1,8 @@
 use crate::*;
 use eframe::egui;
 use eframe::egui::NumExt;
-use eframe::egui::util::undoer::Undoer;
 use regex::Regex;
+use std::collections::*;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::*;
@@ -69,6 +69,110 @@ pub fn file_dialog_right_panel(ui: &mut egui::Ui, dia: &mut egui_file_dialog::Fi
 	));
 }
 
+// Based on egui::util::Undoer
+struct LayerUndoer {
+	undos: VecDeque<(aet::AetLayerNode, Vec<usize>)>,
+	original_layer: aet::AetLayerNode,
+	current_path: Vec<usize>,
+	flux: Option<(f64, aet::AetLayerNode)>,
+}
+
+impl LayerUndoer {
+	fn new() -> Self {
+		Self {
+			undos: VecDeque::new(),
+			original_layer: aet::AetLayerNode {
+				name: String::from("DUMMY"),
+				start_time: 0.0,
+				end_time: 0.0,
+				offset_time: 0.0,
+				time_scale: 1.0,
+				flags: kkdlib::aet::LayerFlags::new(),
+				quality: kkdlib::aet::LayerQuality::None,
+				item: aet::AetItemNode::None,
+				markers: Vec::new(),
+				video: None,
+				parent: None,
+				audio: None,
+				sprites: Rc::new(Mutex::new(Vec::new())),
+				visible: false,
+				selected_key: 0,
+				want_deletion: false,
+				want_duplicate: false,
+			},
+			current_path: Vec::new(),
+			flux: None,
+		}
+	}
+	fn has_undo(&self) -> bool {
+		match self.undos.len() {
+			0 => self.flux.is_some(),
+			_ => true,
+		}
+	}
+
+	fn undo(&mut self) -> Option<(aet::AetLayerNode, Vec<usize>)> {
+		if self.flux.is_some() {
+			self.flux = None;
+			Some((self.original_layer.clone(), self.current_path.clone()))
+		} else {
+			let undone = self.undos.pop_back();
+			undone
+		}
+	}
+
+	fn feed_state(&mut self, current_time: f64, selected: &[usize], set: &aet::AetSetNode) {
+		if selected.len() < 3 || selected[0] != 0 {
+			return;
+		}
+		let scene = &set.scenes[selected[1]];
+
+		let layer =
+			selected
+				.iter()
+				.skip(3)
+				.fold(scene.root.layers[selected[2]].clone(), |layer, i| {
+					let layer = layer.try_lock().unwrap();
+					let aet::AetItemNode::Comp(comp) = &layer.item else {
+						panic!();
+					};
+
+					comp.layers[*i].clone()
+				});
+		let layer = layer.lock().unwrap();
+
+		if selected == &self.current_path {
+			if let Some((time, last_update)) = &mut self.flux {
+				if *last_update != *layer {
+					*time = current_time;
+					*last_update = layer.clone();
+				} else if current_time >= *time + 1.0 {
+					self.undos
+						.push_back((self.original_layer.clone(), self.current_path.clone()));
+					if self.undos.len() > 100 {
+						self.undos.pop_front();
+					}
+					self.flux = None;
+					self.original_layer = layer.clone();
+				}
+			} else if self.original_layer != *layer {
+				self.flux = Some((current_time, layer.clone()));
+			}
+		} else {
+			if self.flux.is_some() {
+				self.undos
+					.push_back((self.original_layer.clone(), self.current_path.clone()));
+				if self.undos.len() > 100 {
+					self.undos.pop_front();
+				}
+				self.flux = None;
+			}
+			self.current_path = selected.to_vec();
+			self.original_layer = layer.clone();
+		}
+	}
+}
+
 pub struct App {
 	aet_set: Option<aet::AetSetNode>,
 	aet_set_filepath: Option<PathBuf>,
@@ -79,7 +183,7 @@ pub struct App {
 	selected: Vec<usize>,
 	file_dialog: egui_file_dialog::FileDialog,
 
-	undoer: Option<Undoer<aet::AetSetNode>>,
+	undoer: LayerUndoer,
 }
 
 impl App {
@@ -119,7 +223,7 @@ impl App {
 			spr_db_filepath: None,
 			selected: Vec::new(),
 			file_dialog,
-			undoer: None,
+			undoer: LayerUndoer::new(),
 		})
 	}
 }
@@ -387,6 +491,7 @@ impl App {
 			self.aet_set_filepath = Some(path.clone());
 			self.spr_db = None;
 			self.sprite_set = None;
+			self.undoer = LayerUndoer::new();
 		} else if SPRSET.is_match(name) {
 			let spr_set = spr::SpriteSetNode::read(&name, data);
 			spr_set.init_wgpu(frame);
@@ -508,11 +613,6 @@ impl App {
 				}
 			}
 		}
-
-		if let Some(aet_set) = &self.aet_set {
-			let mut undoer = Undoer::default();
-			self.undoer = Some(undoer);
-		}
 	}
 
 	fn save_files(&self) {
@@ -556,11 +656,6 @@ const UNDO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 	logical_key: egui::Key::Z,
 };
 
-const REDO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
-	modifiers: egui::Modifiers::COMMAND,
-	logical_key: egui::Key::Y,
-};
-
 impl eframe::App for App {
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 		ctx.input_mut(|input| {
@@ -577,27 +672,24 @@ impl eframe::App for App {
 				self.save_files();
 			}
 
-			if let Some(undoer) = &mut self.undoer
-				&& let Some(aet_set) = &mut self.aet_set
-			{
-				if input.consume_shortcut(&UNDO_SHORTCUT)
-					&& let Some(undone) = undoer.undo(aet_set)
+			if let Some(aet_set) = &mut self.aet_set {
+				if self.undoer.has_undo()
+					&& input.consume_shortcut(&UNDO_SHORTCUT)
+					&& let Some((undone, path)) = self.undoer.undo()
 				{
-					aet_set.update_from(undone);
+					let layer = path.iter().skip(3).fold(
+						aet_set.scenes[path[1]].root.layers[path[2]].clone(),
+						|layer, i| {
+							let layer = layer.try_lock().unwrap();
+							let aet::AetItemNode::Comp(comp) = &layer.item else {
+								panic!();
+							};
 
-					if let Some(spr_db) = &self.spr_db
-						&& let Some(spr_set) = &self.sprite_set
-					{
-						for scene in &mut aet_set.scenes {
-							scene.root.update_video_textures(spr_db, spr_set);
-						}
-					}
-				}
+							comp.layers[*i].clone()
+						},
+					);
 
-				if input.consume_shortcut(&REDO_SHORTCUT)
-					&& let Some(redone) = undoer.redo(aet_set)
-				{
-					aet_set.update_from(redone);
+					*layer.try_lock().unwrap() = undone;
 
 					if let Some(spr_db) = &self.spr_db
 						&& let Some(spr_set) = &self.sprite_set
@@ -610,10 +702,9 @@ impl eframe::App for App {
 			}
 		});
 
-		if let Some(aet_set) = &self.aet_set
-			&& let Some(undoer) = &mut self.undoer
-		{
-			undoer.feed_state(ctx.input(|input| input.time), aet_set);
+		if let Some(aet_set) = &self.aet_set {
+			self.undoer
+				.feed_state(ctx.input(|input| input.time), &self.selected, aet_set);
 		}
 
 		self.file_dialog
@@ -646,37 +737,28 @@ impl eframe::App for App {
 				});
 
 				ui.menu_button("Edit", |ui| {
-					if let Some(undoer) = &mut self.undoer
-						&& let Some(aet_set) = &mut self.aet_set
-					{
+					if let Some(aet_set) = &mut self.aet_set {
 						if ui
 							.add_enabled(
-								undoer.has_undo(aet_set),
+								self.undoer.has_undo(),
 								egui::Button::new("Undo")
 									.shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
 							)
-							.clicked() && let Some(undone) = undoer.undo(aet_set)
+							.clicked() && let Some((undone, path)) = self.undoer.undo()
 						{
-							aet_set.update_from(undone);
+							let layer = path.iter().skip(3).fold(
+								aet_set.scenes[path[1]].root.layers[path[2]].clone(),
+								|layer, i| {
+									let layer = layer.try_lock().unwrap();
+									let aet::AetItemNode::Comp(comp) = &layer.item else {
+										panic!();
+									};
 
-							if let Some(spr_db) = &self.spr_db
-								&& let Some(spr_set) = &self.sprite_set
-							{
-								for scene in &mut aet_set.scenes {
-									scene.root.update_video_textures(spr_db, spr_set);
-								}
-							}
-						}
+									comp.layers[*i].clone()
+								},
+							);
 
-						if ui
-							.add_enabled(
-								undoer.has_redo(aet_set),
-								egui::Button::new("Redo")
-									.shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
-							)
-							.clicked() && let Some(redone) = undoer.redo(aet_set)
-						{
-							aet_set.update_from(redone);
+							*layer.try_lock().unwrap() = undone;
 
 							if let Some(spr_db) = &self.spr_db
 								&& let Some(spr_set) = &self.sprite_set
@@ -691,11 +773,6 @@ impl eframe::App for App {
 							false,
 							egui::Button::new("Undo")
 								.shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
-						);
-						ui.add_enabled(
-							false,
-							egui::Button::new("Redo")
-								.shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
 						);
 					}
 				});
@@ -785,7 +862,7 @@ impl eframe::App for App {
 						ctx.input(|input| {
 							scene.current_time += input.stable_dt * scene.fps;
 						});
-						ctx.request_repaint_after_secs(1.0 / scene.fps);
+						ctx.request_repaint_after_secs(2.0 / scene.fps);
 					}
 				}
 				ui.take_available_space();
