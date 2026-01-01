@@ -26,6 +26,7 @@ pub trait TreeNode {
 		_path: &[usize],
 		_selected: &mut Vec<usize>,
 		_frame: &mut eframe::Frame,
+		_undoer: &mut LayerUndoer,
 	) -> egui::Response {
 		ui.response()
 	}
@@ -70,7 +71,7 @@ pub fn file_dialog_right_panel(ui: &mut egui::Ui, dia: &mut egui_file_dialog::Fi
 }
 
 // Based on egui::util::Undoer
-struct LayerUndoer {
+pub struct LayerUndoer {
 	undos: VecDeque<(aet::AetLayerNode, Vec<usize>)>,
 	original_layer: aet::AetLayerNode,
 	current_path: Vec<usize>,
@@ -78,7 +79,7 @@ struct LayerUndoer {
 }
 
 impl LayerUndoer {
-	fn new() -> Self {
+	pub fn new() -> Self {
 		Self {
 			undos: VecDeque::new(),
 			original_layer: aet::AetLayerNode {
@@ -104,14 +105,15 @@ impl LayerUndoer {
 			flux: None,
 		}
 	}
-	fn has_undo(&self) -> bool {
+
+	pub fn has_undo(&self) -> bool {
 		match self.undos.len() {
 			0 => self.flux.is_some(),
 			_ => true,
 		}
 	}
 
-	fn undo(&mut self) -> Option<(aet::AetLayerNode, Vec<usize>)> {
+	pub fn undo(&mut self) -> Option<(aet::AetLayerNode, Vec<usize>)> {
 		if self.flux.is_some() {
 			self.flux = None;
 			Some((self.original_layer.clone(), self.current_path.clone()))
@@ -121,7 +123,16 @@ impl LayerUndoer {
 		}
 	}
 
-	fn feed_state(&mut self, current_time: f64, selected: &[usize], set: &aet::AetSetNode) {
+	// Adds a state *before* changes
+	pub fn add_undo(&mut self, layer: aet::AetLayerNode, path: Vec<usize>) {
+		self.undos.push_back((layer, path));
+		if self.undos.len() > 100 {
+			self.undos.pop_front();
+		}
+		self.flux = None;
+	}
+
+	pub fn feed_state(&mut self, current_time: f64, selected: &[usize], set: &aet::AetSetNode) {
 		if selected.len() < 3 || selected[0] != 0 {
 			return;
 		}
@@ -147,12 +158,7 @@ impl LayerUndoer {
 					*time = current_time;
 					*last_update = layer.clone();
 				} else if current_time >= *time + 1.0 {
-					self.undos
-						.push_back((self.original_layer.clone(), self.current_path.clone()));
-					if self.undos.len() > 100 {
-						self.undos.pop_front();
-					}
-					self.flux = None;
+					self.add_undo(self.original_layer.clone(), self.current_path.clone());
 					self.original_layer = layer.clone();
 				}
 			} else if self.original_layer != *layer {
@@ -160,12 +166,7 @@ impl LayerUndoer {
 			}
 		} else {
 			if self.flux.is_some() {
-				self.undos
-					.push_back((self.original_layer.clone(), self.current_path.clone()));
-				if self.undos.len() > 100 {
-					self.undos.pop_front();
-				}
-				self.flux = None;
+				self.add_undo(self.original_layer.clone(), self.current_path.clone());
 			}
 			self.current_path = selected.to_vec();
 			self.original_layer = layer.clone();
@@ -343,12 +344,13 @@ pub fn show_node(
 	path: &[usize],
 	selected: &mut Vec<usize>,
 	frame: &mut eframe::Frame,
+	undoer: &mut LayerUndoer,
 ) -> egui::Response {
 	let mut path = path.to_vec();
 	path.push(index);
 
 	if node.has_custom_tree() {
-		node.display_tree(ui, &path, selected, frame)
+		node.display_tree(ui, &path, selected, frame, undoer)
 	} else if node.has_children() {
 		let resp = ui
 			.horizontal(|ui| {
@@ -362,7 +364,7 @@ pub fn show_node(
 					|ui| {
 						let mut index = 0;
 						node.display_children(&mut |child| {
-							show_node(ui, child, index, &path, selected, frame);
+							show_node(ui, child, index, &path, selected, frame, undoer);
 							index += 1;
 						});
 					},
@@ -677,19 +679,41 @@ impl eframe::App for App {
 					&& input.consume_shortcut(&UNDO_SHORTCUT)
 					&& let Some((undone, path)) = self.undoer.undo()
 				{
-					let layer = path.iter().skip(3).fold(
-						aet_set.scenes[path[1]].root.layers[path[2]].clone(),
-						|layer, i| {
-							let layer = layer.try_lock().unwrap();
-							let aet::AetItemNode::Comp(comp) = &layer.item else {
-								panic!();
-							};
+					if path.len() == 2 {
+						let aet::AetItemNode::Comp(comp) = undone.item else {
+							panic!()
+						};
 
-							comp.layers[*i].clone()
-						},
-					);
+						for layer in &comp.layers {
+							let mut layer = layer.try_lock().unwrap();
+							layer.want_deletion = false;
+							layer.want_duplicate = false;
+						}
 
-					*layer.try_lock().unwrap() = undone;
+						aet_set.scenes[path[1]].root = comp;
+					} else {
+						let layer = path.iter().skip(3).fold(
+							aet_set.scenes[path[1]].root.layers[path[2]].clone(),
+							|layer, i| {
+								let layer = layer.try_lock().unwrap();
+								let aet::AetItemNode::Comp(comp) = &layer.item else {
+									panic!();
+								};
+
+								comp.layers[*i].clone()
+							},
+						);
+
+						if let aet::AetItemNode::Comp(comp) = &undone.item {
+							for layer in &comp.layers {
+								let mut layer = layer.try_lock().unwrap();
+								layer.want_deletion = false;
+								layer.want_duplicate = false;
+							}
+						}
+
+						*layer.try_lock().unwrap() = undone;
+					}
 
 					if let Some(spr_db) = &self.spr_db
 						&& let Some(spr_set) = &self.sprite_set
@@ -746,19 +770,41 @@ impl eframe::App for App {
 							)
 							.clicked() && let Some((undone, path)) = self.undoer.undo()
 						{
-							let layer = path.iter().skip(3).fold(
-								aet_set.scenes[path[1]].root.layers[path[2]].clone(),
-								|layer, i| {
-									let layer = layer.try_lock().unwrap();
-									let aet::AetItemNode::Comp(comp) = &layer.item else {
-										panic!();
-									};
+							if path.len() == 2 {
+								let aet::AetItemNode::Comp(comp) = undone.item else {
+									panic!()
+								};
 
-									comp.layers[*i].clone()
-								},
-							);
+								for layer in &comp.layers {
+									let mut layer = layer.try_lock().unwrap();
+									layer.want_deletion = false;
+									layer.want_duplicate = false;
+								}
 
-							*layer.try_lock().unwrap() = undone;
+								aet_set.scenes[path[1]].root = comp;
+							} else {
+								let layer = path.iter().skip(3).fold(
+									aet_set.scenes[path[1]].root.layers[path[2]].clone(),
+									|layer, i| {
+										let layer = layer.try_lock().unwrap();
+										let aet::AetItemNode::Comp(comp) = &layer.item else {
+											panic!();
+										};
+
+										comp.layers[*i].clone()
+									},
+								);
+
+								if let aet::AetItemNode::Comp(comp) = &undone.item {
+									for layer in &comp.layers {
+										let mut layer = layer.try_lock().unwrap();
+										layer.want_deletion = false;
+										layer.want_duplicate = false;
+									}
+								}
+
+								*layer.try_lock().unwrap() = undone;
+							}
 
 							if let Some(spr_db) = &self.spr_db
 								&& let Some(spr_set) = &self.sprite_set
@@ -808,13 +854,37 @@ impl eframe::App for App {
 
 				egui::ScrollArea::vertical().show(ui, |ui| {
 					if let Some(node) = &mut self.aet_set {
-						show_node(ui, node, 0, &[], &mut self.selected, frame);
+						show_node(
+							ui,
+							node,
+							0,
+							&[],
+							&mut self.selected,
+							frame,
+							&mut self.undoer,
+						);
 					}
 					if let Some(node) = &mut self.sprite_set {
-						show_node(ui, node, 1, &[], &mut self.selected, frame);
+						show_node(
+							ui,
+							node,
+							1,
+							&[],
+							&mut self.selected,
+							frame,
+							&mut self.undoer,
+						);
 					}
 					if let Some(node) = &mut self.spr_db {
-						show_node(ui, node, 2, &[], &mut self.selected, frame);
+						show_node(
+							ui,
+							node,
+							2,
+							&[],
+							&mut self.selected,
+							frame,
+							&mut self.undoer,
+						);
 					}
 
 					ui.take_available_space();

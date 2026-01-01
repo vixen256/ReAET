@@ -370,6 +370,7 @@ impl TreeNode for AetSceneNode {
 		path: &[usize],
 		selected: &mut Vec<usize>,
 		frame: &mut eframe::Frame,
+		undoer: &mut crate::app::LayerUndoer,
 	) -> egui::Response {
 		let resp = crate::app::collapsing_selectable_label(
 			ui,
@@ -377,7 +378,7 @@ impl TreeNode for AetSceneNode {
 			path,
 			path == *selected,
 			|ui| {
-				self.root.display_tree(ui, path, selected, frame);
+				self.root.display_tree(ui, path, selected, frame, undoer);
 			},
 		)
 		.header_response;
@@ -393,6 +394,35 @@ impl TreeNode for AetSceneNode {
 		if resp.clicked() {
 			self.selected(frame);
 			*selected = path.to_vec();
+		}
+
+		if self.root.layers.iter().any(|layer| {
+			let layer = layer.try_lock().unwrap();
+			layer.want_deletion || layer.want_duplicate
+		}) {
+			*selected = path.to_vec();
+			undoer.add_undo(
+				AetLayerNode {
+					name: String::from("DUMMY"),
+					start_time: 0.0,
+					end_time: 0.0,
+					offset_time: 0.0,
+					time_scale: 1.0,
+					flags: kkdlib::aet::LayerFlags::new(),
+					quality: kkdlib::aet::LayerQuality::None,
+					item: AetItemNode::Comp(self.root.clone()),
+					markers: Vec::new(),
+					video: None,
+					parent: None,
+					audio: None,
+					sprites: Rc::new(Mutex::new(Vec::new())),
+					visible: false,
+					selected_key: 0,
+					want_deletion: false,
+					want_duplicate: false,
+				},
+				path.to_vec(),
+			);
 		}
 
 		self.root
@@ -1187,6 +1217,7 @@ impl AetCompNode {
 		path: &[usize],
 		selected: &mut Vec<usize>,
 		frame: &mut eframe::Frame,
+		undoer: &mut crate::app::LayerUndoer,
 	) -> egui::Response {
 		let mut last_resp = None;
 		let resp = egui_dnd::dnd(ui, ui.id()).show_custom(|ui, iter| {
@@ -1207,6 +1238,7 @@ impl AetCompNode {
 									path,
 									selected,
 									frame,
+									undoer,
 								);
 
 								let rect = egui::Rect {
@@ -1240,6 +1272,10 @@ impl AetCompNode {
 			}
 		});
 
+		if resp.is_dragging() {
+			*selected = path.to_vec();
+		}
+
 		if let Some(update) = &resp.final_update() {
 			let layer = self.layers.remove(update.from);
 			let to = if update.to > update.from {
@@ -1249,20 +1285,6 @@ impl AetCompNode {
 			};
 
 			self.layers.insert(to, layer);
-
-			let mut from_path = path.to_vec();
-			from_path.push(update.from);
-
-			if from_path == *selected {
-				*selected.last_mut().unwrap() = to;
-			} else if selected.starts_with(&path) && selected.len() > path.len() {
-				let selected = selected.get_mut(path.len()).unwrap();
-				if to > update.from && *selected <= to && *selected > update.from {
-					*selected -= 1;
-				} else if update.from > to && *selected >= to && *selected < update.from {
-					*selected += 1;
-				}
-			}
 		}
 
 		last_resp.unwrap_or(ui.response())
@@ -1387,13 +1409,14 @@ impl TreeNode for AetLayerNode {
 		path: &[usize],
 		selected: &mut Vec<usize>,
 		frame: &mut eframe::Frame,
+		undoer: &mut crate::app::LayerUndoer,
 	) -> egui::Response {
 		let resp = ui
 			.horizontal(|ui| {
 				self.label_sameline(ui);
 				crate::app::collapsing_selectable_label(
 					ui,
-					&self.name,
+					self.name.clone(),
 					path,
 					path == *selected,
 					|ui| {
@@ -1401,7 +1424,19 @@ impl TreeNode for AetLayerNode {
 							panic!();
 						};
 
-						comp.display_tree(ui, path, selected, frame);
+						comp.display_tree(ui, path, selected, frame, undoer);
+
+						if comp.layers.iter().any(|layer| {
+							let layer = layer.try_lock().unwrap();
+							layer.want_deletion || layer.want_duplicate
+						}) {
+							*selected = path.to_vec();
+							undoer.add_undo(self.clone(), path.to_vec());
+						}
+
+						let AetItemNode::Comp(comp) = &mut self.item else {
+							panic!();
+						};
 
 						comp.layers
 							.retain(|layer| !layer.try_lock().unwrap().want_deletion);
