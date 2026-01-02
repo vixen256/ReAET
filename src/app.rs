@@ -38,7 +38,7 @@ pub trait TreeNode {
 	) -> Option<egui::epaint::PaintCallback> {
 		None
 	}
-	fn display_opts(&mut self, _ui: &mut egui::Ui) {}
+	fn display_opts(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {}
 	fn display_ctx_menu(&mut self, _ui: &mut egui::Ui) {}
 	fn raw_data(&self) -> Vec<u8> {
 		Vec::new()
@@ -420,10 +420,11 @@ fn show_node_opts(
 	depth: usize,
 	path: &[usize],
 	desired_path: &[usize],
+	frame: &mut eframe::Frame,
 ) {
 	if depth == desired_path.len() - 1 {
 		if desired_path[depth] == index {
-			node.display_opts(ui);
+			node.display_opts(ui, frame);
 		}
 		return;
 	}
@@ -435,7 +436,7 @@ fn show_node_opts(
 	let mut index = 0;
 	node.display_children(&mut |child| {
 		if index == desired_index {
-			show_node_opts(ui, child, index, depth + 1, &new_path, desired_path);
+			show_node_opts(ui, child, index, depth + 1, &new_path, desired_path, frame);
 		}
 		index += 1;
 	});
@@ -835,17 +836,17 @@ impl eframe::App for App {
 							if let Some(node) = &mut self.aet_set
 								&& self.selected[0] == 0
 							{
-								show_node_opts(ui, node, 0, 0, &[], &self.selected);
+								show_node_opts(ui, node, 0, 0, &[], &self.selected, frame);
 							}
 							if let Some(node) = &mut self.sprite_set
 								&& self.selected[0] == 1
 							{
-								show_node_opts(ui, node, 1, 0, &[], &self.selected);
+								show_node_opts(ui, node, 1, 0, &[], &self.selected, frame);
 							}
 							if let Some(node) = &mut self.spr_db
 								&& self.selected[0] == 2
 							{
-								show_node_opts(ui, node, 2, 0, &[], &self.selected);
+								show_node_opts(ui, node, 2, 0, &[], &self.selected, frame);
 							}
 
 							ui.take_available_space();

@@ -60,7 +60,7 @@ impl TreeNode for SprDbNode {
 		spr_db.to_buf().unwrap_or_default()
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
 			.striped(true)
@@ -157,7 +157,7 @@ impl TreeNode for SprDbSetNode {
 		}
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
 			.striped(true)
@@ -179,7 +179,7 @@ impl TreeNode for SprDbEntryNode {
 		&self.name
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
 			.striped(true)

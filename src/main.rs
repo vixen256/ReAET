@@ -4,6 +4,7 @@ pub mod spr;
 pub mod spr_db;
 pub mod txp;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
 	use eframe::egui_wgpu::*;
 

@@ -50,7 +50,7 @@ impl TreeNode for TextureSetNode {
 		}
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if self.filename.is_some() {
 			let height = ui.text_style_height(&egui::TextStyle::Body);
 			egui_extras::TableBuilder::new(ui)
@@ -244,7 +244,7 @@ pub struct TextureNode {
 }
 
 impl TextureNode {
-	fn pick_file(&mut self, path: std::path::PathBuf) {
+	fn pick_file(&mut self, path: std::path::PathBuf, frame: &mut eframe::Frame) {
 		let extension = path.extension().unwrap_or_default();
 		let Some(format) = image::ImageFormat::from_extension(extension) else {
 			self.error = Some(format!("Could not determine format of {:?}", path));
@@ -289,17 +289,35 @@ impl TextureNode {
 			};
 
 			if self.texture.is_ycbcr() {
-				let Some(texture) = txp::Texture::encode_ycbcr(
-					image.width() as i32,
-					image.height() as i32,
-					image.flipv().to_rgba8().as_bytes(),
-				) else {
-					self.error = Some(String::from("Could not encode image"));
-					return;
-				};
-
-				self.texture = texture;
-				self.texture_updated = true;
+				#[cfg(feature = "directxtex")]
+				{
+					let Some(texture) = txp::Texture::encode_ycbcr(
+						image.width() as i32,
+						image.height() as i32,
+						image.flipv().to_rgba8().as_bytes(),
+					) else {
+						self.error = Some(String::from("Could not encode image"));
+						return;
+					};
+					self.texture = texture;
+					self.texture_updated = true;
+				}
+				#[cfg(not(feature = "directxtex"))]
+				{
+					let render_state = &frame.wgpu_render_state().unwrap();
+					let Some(texture) = txp::Texture::encode_ycbcr(
+						image.width(),
+						image.height(),
+						image.flipv().to_rgba8().as_bytes(),
+						&render_state.device,
+						&render_state.queue,
+					) else {
+						self.error = Some(String::from("Could not encode image"));
+						return;
+					};
+					self.texture = texture;
+					self.texture_updated = true;
+				}
 			} else {
 				let mut texture = txp::Texture::new();
 				texture.set_has_cube_map(false);
@@ -319,21 +337,45 @@ impl TextureNode {
 						break;
 					}
 
-					let Some(mipmap) = txp::Mipmap::from_rgba(
-						width as i32,
-						height as i32,
-						image
-							.flipv()
-							.resize(width, height, image::imageops::FilterType::Lanczos3)
-							.to_rgba8()
-							.as_bytes(),
-						mip.format(),
-					) else {
-						self.error = Some(String::from("Could not encode image"));
-						return;
-					};
+					#[cfg(feature = "directxtex")]
+					{
+						let Some(mipmap) = txp::Mipmap::from_rgba(
+							width as i32,
+							height as i32,
+							image
+								.flipv()
+								.resize(width, height, image::imageops::FilterType::Lanczos3)
+								.to_rgba8()
+								.as_bytes(),
+							mip.format(),
+						) else {
+							self.error = Some(String::from("Could not encode image"));
+							return;
+						};
 
-					texture.add_mipmap(&mipmap);
+						texture.add_mipmap(&mipmap);
+					}
+					#[cfg(not(feature = "directxtex"))]
+					{
+						let render_state = &frame.wgpu_render_state().unwrap();
+						let Some(mipmap) = txp::Mipmap::from_rgba_gpu(
+							width as i32,
+							height as i32,
+							image
+								.flipv()
+								.resize(width, height, image::imageops::FilterType::Lanczos3)
+								.to_rgba8()
+								.as_bytes(),
+							mip.format(),
+							&render_state.device,
+							&render_state.queue,
+						) else {
+							self.error = Some(String::from("Could not encode image"));
+							return;
+						};
+
+						texture.add_mipmap(&mipmap);
+					}
 				}
 				self.texture = texture;
 				self.texture_updated = true;
@@ -365,7 +407,7 @@ impl TreeNode for TextureNode {
 		}
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
 		if let Some(error) = &self.error {
 			let modal = egui::Modal::new(egui::Id::new("SpriteInfoError")).show(ui.ctx(), |ui| {
 				ui.heading("An error has occured");
@@ -386,7 +428,7 @@ impl TreeNode for TextureNode {
 			.update_with_right_panel_ui(ui.ctx(), &mut crate::app::file_dialog_right_panel);
 
 		if let Some(path) = self.file_dialog.take_picked() {
-			self.pick_file(path);
+			self.pick_file(path, frame);
 		}
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);
@@ -505,22 +547,61 @@ impl TreeNode for TextureNode {
 						if format != old_format {
 							if format == 0x90 {
 								let rgba = mip.rgba().unwrap_or_default();
-								replacement_texture =
-									txp::Texture::encode_ycbcr(mip.width(), mip.height(), &rgba);
+								#[cfg(feature = "directxtex")]
+								{
+									replacement_texture = txp::Texture::encode_ycbcr(
+										mip.width(),
+										mip.height(),
+										&rgba,
+									);
+								}
+								#[cfg(not(feature = "directxtex"))]
+								{
+									let render_state = &frame.wgpu_render_state().unwrap();
+									replacement_texture = txp::Texture::encode_ycbcr(
+										mip.width() as u32,
+										mip.height() as u32,
+										&rgba,
+										&render_state.device,
+										&render_state.queue,
+									);
+								}
 							} else if old_format == 0x90 {
 								let rgba = self.texture.decode_ycbcr().unwrap_or_default();
-								if let Some(mip) = txp::Mipmap::from_rgba(
-									mip.width(),
-									mip.height(),
-									&rgba,
-									unsafe { std::mem::transmute(format) },
-								) {
-									let mut tex = txp::Texture::new();
-									tex.set_has_cube_map(false);
-									tex.set_array_size(1);
-									tex.set_mipmaps_count(1);
-									tex.add_mipmap(&mip);
-									replacement_texture = Some(tex);
+								#[cfg(feature = "directxtex")]
+								{
+									if let Some(mip) = txp::Mipmap::from_rgba(
+										mip.width(),
+										mip.height(),
+										&rgba,
+										unsafe { std::mem::transmute(format) },
+									) {
+										let mut tex = txp::Texture::new();
+										tex.set_has_cube_map(false);
+										tex.set_array_size(1);
+										tex.set_mipmaps_count(1);
+										tex.add_mipmap(&mip);
+										replacement_texture = Some(tex);
+									}
+								}
+								#[cfg(not(feature = "directxtex"))]
+								{
+									let render_state = &frame.wgpu_render_state().unwrap();
+									if let Some(mip) = txp::Mipmap::from_rgba_gpu(
+										mip.width(),
+										mip.height(),
+										&rgba,
+										unsafe { std::mem::transmute(format) },
+										&render_state.device,
+										&render_state.queue,
+									) {
+										let mut tex = txp::Texture::new();
+										tex.set_has_cube_map(false);
+										tex.set_array_size(1);
+										tex.set_mipmaps_count(1);
+										tex.add_mipmap(&mip);
+										replacement_texture = Some(tex);
+									}
 								}
 							} else {
 								let mut tex = txp::Texture::new();
@@ -529,13 +610,30 @@ impl TreeNode for TextureNode {
 								tex.set_mipmaps_count(self.texture.mipmaps_count());
 								for mip in self.texture.mipmaps() {
 									let rgba = mip.rgba().unwrap_or_default();
-									if let Some(mip) = txp::Mipmap::from_rgba(
-										mip.width(),
-										mip.height(),
-										&rgba,
-										unsafe { std::mem::transmute(format) },
-									) {
-										tex.add_mipmap(&mip);
+									#[cfg(feature = "directxtex")]
+									{
+										if let Some(mip) = txp::Mipmap::from_rgba(
+											mip.width(),
+											mip.height(),
+											&rgba,
+											unsafe { std::mem::transmute(format) },
+										) {
+											tex.add_mipmap(&mip);
+										}
+									}
+									#[cfg(not(feature = "directxtex"))]
+									{
+										let render_state = &frame.wgpu_render_state().unwrap();
+										if let Some(mip) = txp::Mipmap::from_rgba_gpu(
+											mip.width(),
+											mip.height(),
+											&rgba,
+											unsafe { std::mem::transmute(format) },
+											&render_state.device,
+											&render_state.queue,
+										) {
+											tex.add_mipmap(&mip);
+										}
 									}
 								}
 								replacement_texture = Some(tex);
@@ -1000,4 +1098,164 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			uniform_buffers: vec![(base_uniform_buffer, uniform_buffer_group)],
 			sampler,
 		});
+}
+
+#[cfg(false)]
+pub fn encode_texture(
+	device: &wgpu::Device,
+	queue: &wgpu::Queue,
+	width: u32,
+	height: u32,
+	rgba: &[u8],
+	format: block_compression::CompressionVariant,
+) -> Vec<u8> {
+	let texture = device.create_texture_with_data(
+		queue,
+		&wgpu::TextureDescriptor {
+			size: wgpu::Extent3d {
+				width,
+				height,
+				depth_or_array_layers: 1,
+			},
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: wgpu::TextureDimension::D2,
+			format: wgpu::TextureFormat::Rgba8Unorm,
+			usage: wgpu::TextureUsages::COPY_DST,
+			label: None,
+			view_formats: &[],
+		},
+		wgpu::util::TextureDataOrder::LayerMajor,
+		rgba,
+	);
+	let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+	let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+		label: None,
+		size: format.blocks_byte_size(width, height) as wgpu::BufferAddress,
+		usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
+		mapped_at_creation: false,
+	});
+
+	let map_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+		label: None,
+		size: buffer.size(),
+		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+		mapped_at_creation: false,
+	});
+
+	let mut encoder =
+		device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+	let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+		label: None,
+		timestamp_writes: None,
+	});
+
+	let mut compresser = block_compression::GpuBlockCompressor::new(device.clone(), queue.clone());
+	compresser.add_compression_task(format, &view, width, height, &buffer, None, None);
+	compresser.compress(&mut compute_pass);
+
+	drop(compute_pass);
+
+	encoder.copy_buffer_to_buffer(&buffer, 0, &map_buffer, 0, buffer.size());
+
+	let (tx, rx) = std::sync::mpsc::channel();
+
+	encoder.map_buffer_on_submit(&map_buffer, wgpu::MapMode::Read, .., move |res| {
+		tx.send(res).unwrap()
+	});
+
+	queue.submit([encoder.finish()]);
+
+	let Ok(Ok(())) = rx.recv() else { panic!() };
+	let data = map_buffer.get_mapped_range(..).to_vec();
+	map_buffer.unmap();
+
+	data
+}
+
+#[cfg(false)]
+pub fn encode_texture_ycbcr(
+	device: &wgpu::Device,
+	queue: &wgpu::Queue,
+	width: u32,
+	height: u32,
+	rgba: &[u8],
+) -> Vec<u8> {
+	let format = block_compression::CompressionVariant::BC5;
+	let size =
+		format.blocks_byte_size(width, height) + format.blocks_byte_size(width / 2, height / 2);
+
+	let texture = device.create_texture_with_data(
+		queue,
+		&wgpu::TextureDescriptor {
+			size: wgpu::Extent3d {
+				width,
+				height,
+				depth_or_array_layers: 1,
+			},
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: wgpu::TextureDimension::D2,
+			format: wgpu::TextureFormat::Rgba8Unorm,
+			usage: wgpu::TextureUsages::COPY_DST,
+			label: None,
+			view_formats: &[],
+		},
+		wgpu::util::TextureDataOrder::LayerMajor,
+		rgba,
+	);
+	let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+	let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+		label: None,
+		size: size as wgpu::BufferAddress,
+		usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
+		mapped_at_creation: false,
+	});
+
+	let map_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+		label: None,
+		size: buffer.size(),
+		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+		mapped_at_creation: false,
+	});
+
+	let mut encoder =
+		device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+	let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+		label: None,
+		timestamp_writes: None,
+	});
+
+	let mut compresser = block_compression::GpuBlockCompressor::new(device.clone(), queue.clone());
+	compresser.add_compression_task(format, &view, width, height, &buffer, None, None);
+	compresser.add_compression_task(
+		format,
+		&view,
+		width / 2,
+		height / 2,
+		&buffer,
+		None,
+		Some(format.blocks_byte_size(width, height) as u32),
+	);
+	compresser.compress(&mut compute_pass);
+
+	drop(compute_pass);
+
+	encoder.copy_buffer_to_buffer(&buffer, 0, &map_buffer, 0, buffer.size());
+
+	let (tx, rx) = std::sync::mpsc::channel();
+
+	encoder.map_buffer_on_submit(&map_buffer, wgpu::MapMode::Read, .., move |res| {
+		tx.send(res).unwrap()
+	});
+
+	queue.submit([encoder.finish()]);
+
+	let Ok(Ok(())) = rx.recv() else { panic!() };
+	let data = map_buffer.get_mapped_range(..).to_vec();
+	map_buffer.unmap();
+
+	data
 }

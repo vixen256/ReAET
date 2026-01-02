@@ -151,7 +151,7 @@ impl TreeNode for AetSetNode {
 		}
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
 			.striped(true)
@@ -448,7 +448,7 @@ impl TreeNode for AetSceneNode {
 		resp
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
 			.striped(true)
@@ -1477,7 +1477,7 @@ impl TreeNode for AetLayerNode {
 		resp
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
 			.striped(true)

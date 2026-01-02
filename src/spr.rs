@@ -78,7 +78,7 @@ impl TreeNode for SpriteSetNode {
 		spr_set.to_buf().unwrap_or_default()
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
 			.striped(true)
@@ -654,7 +654,7 @@ pub struct SpriteInfoNode {
 }
 
 impl SpriteInfoNode {
-	fn pick_file(&mut self, path: std::path::PathBuf) {
+	fn pick_file(&mut self, path: std::path::PathBuf, frame: &mut eframe::Frame) {
 		let extension = path.extension().unwrap_or_default();
 		let Some(format) = image::ImageFormat::from_extension(extension) else {
 			self.error = Some(format!("Could not determine format of {:?}", path));
@@ -738,35 +738,79 @@ impl SpriteInfoNode {
 			}
 
 			if texture.texture.is_ycbcr() {
-				let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
-					image.width() as i32,
-					image.height() as i32,
-					image.as_bytes(),
-				) else {
-					self.error = Some(String::from("Could not encode texture"));
-					return;
-				};
-
-				texture.texture = tex;
-				texture.texture_updated = true;
+				#[cfg(feature = "directxtex")]
+				{
+					let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
+						image.width() as i32,
+						image.height() as i32,
+						image.as_bytes(),
+					) else {
+						self.error = Some(String::from("Could not encode image"));
+						return;
+					};
+					texture.texture = tex;
+					texture.texture_updated = true;
+				}
+				#[cfg(not(feature = "directxtex"))]
+				{
+					let render_state = &frame.wgpu_render_state().unwrap();
+					let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
+						image.width(),
+						image.height(),
+						image.as_bytes(),
+						&render_state.device,
+						&render_state.queue,
+					) else {
+						self.error = Some(String::from("Could not encode image"));
+						return;
+					};
+					texture.texture = tex;
+					texture.texture_updated = true;
+				}
 			} else {
-				let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba(
-					image.width() as i32,
-					image.height() as i32,
-					image.as_bytes(),
-					mip.format(),
-				) else {
-					self.error = Some(String::from("Could not encode texture"));
-					return;
-				};
+				#[cfg(feature = "directxtex")]
+				{
+					let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba(
+						image.width() as i32,
+						image.height() as i32,
+						image.as_bytes(),
+						mip.format(),
+					) else {
+						self.error = Some(String::from("Could not encode texture"));
+						return;
+					};
 
-				let mut tex = kkdlib::txp::Texture::new();
-				tex.set_has_cube_map(false);
-				tex.set_array_size(1);
-				tex.set_mipmaps_count(1);
-				tex.add_mipmap(&mipmap);
-				texture.texture = tex;
-				texture.texture_updated = true;
+					let mut tex = kkdlib::txp::Texture::new();
+					tex.set_has_cube_map(false);
+					tex.set_array_size(1);
+					tex.set_mipmaps_count(1);
+					tex.add_mipmap(&mipmap);
+					texture.texture = tex;
+					texture.texture_updated = true;
+				}
+				#[cfg(not(feature = "directxtex"))]
+				{
+					let render_state = &frame.wgpu_render_state().unwrap();
+					let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
+						image.width() as i32,
+						image.height() as i32,
+						image.as_bytes(),
+						mip.format(),
+						&render_state.device,
+						&render_state.queue,
+					) else {
+						self.error = Some(String::from("Could not encode texture"));
+						return;
+					};
+
+					let mut tex = kkdlib::txp::Texture::new();
+					tex.set_has_cube_map(false);
+					tex.set_array_size(1);
+					tex.set_mipmaps_count(1);
+					tex.add_mipmap(&mipmap);
+					texture.texture = tex;
+					texture.texture_updated = true;
+				}
 			}
 		}
 	}
@@ -795,7 +839,7 @@ impl TreeNode for SpriteInfoNode {
 		}
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
 		if let Some(error) = &self.error {
 			let modal = egui::Modal::new(egui::Id::new("SpriteInfoError")).show(ui.ctx(), |ui| {
 				ui.heading("An error has occured");
@@ -816,7 +860,7 @@ impl TreeNode for SpriteInfoNode {
 			.update_with_right_panel_ui(ui.ctx(), &mut crate::app::file_dialog_right_panel);
 
 		if let Some(path) = self.file_dialog.take_picked() {
-			self.pick_file(path);
+			self.pick_file(path, frame);
 		}
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);

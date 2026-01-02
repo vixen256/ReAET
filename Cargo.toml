@@ -18,6 +18,9 @@ regex = "1.12"
 transform-gizmo-egui = "0.8"
 wgpu = { version = "27.0", default-features = false, features = ["gles", "metal", "parking_lot", "std", "vulkan"] }
 
+[features]
+directxtex = ["kkdlib/directxtex"]
+
 [profile.dev.package."*"]
 opt-level = 1
 
