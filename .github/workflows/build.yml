@@ -3,14 +3,10 @@ name: Build
 on: [push, pull_request]
 
 jobs:
-  build:
-    name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  build-windows:
+    name: Build windows
+    runs-on: windows-latest
     continue-on-error: true
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
     steps:
       - uses: actions/checkout@v6
         with:
@@ -23,5 +19,45 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: ReAET-${{ matrix.os }}
-          path: target/release/ReAET${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          name: ReAET-windows
+          path: target/release/ReAET.exe
+
+  build-macos:
+    name: Build macos
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Build
+        run: |
+          rustup override set nightly
+          cargo build --release
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ReAET-macos-aarch64
+          path: target/release/ReAET
+
+  build-linux:
+    name: Build linux
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install libglib2.0-dev
+          rustup override set nightly
+          cargo build --release
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ReAET-linux
+          path: target/release/ReAET
