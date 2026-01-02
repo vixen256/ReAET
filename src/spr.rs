@@ -571,7 +571,7 @@ impl TreeNode for SpriteInfosNode {
 						.add_save_extension("PNG", "png")
 						.add_save_extension("WEBP", "webp")
 						.default_save_extension("PNG")
-						.add_file_filter_extensions("Images", vec!["dds", "jpg", "png", "webp"])
+						.add_file_filter_extensions("Images", vec!["jpg", "png", "webp"])
 						.default_file_filter("Images"),
 					name: format!("Sprite {}", len),
 					info,
@@ -616,10 +616,7 @@ impl SpriteInfosNode {
 								.add_save_extension("PNG", "png")
 								.add_save_extension("WEBP", "webp")
 								.default_save_extension("PNG")
-								.add_file_filter_extensions(
-									"Images",
-									vec!["dds", "jpg", "png", "webp"],
-								)
+								.add_file_filter_extensions("Images", vec!["jpg", "png", "webp"])
 								.default_file_filter("Images")
 								.default_file_name(&name),
 							name,
