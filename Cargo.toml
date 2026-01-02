@@ -11,7 +11,7 @@ egui_extras = "0.33"
 egui_material_icons = "0.5"
 egui_plot = "0.34"
 glam = "0.30"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "rayon", "webp"] }
+image = { version = "0.25", default-features = false, features = ["avif", "nasm", "bmp", "jpeg", "png", "rayon", "webp"] }
 kkdlib = { git = "https://github.com/vixen256/KKdLib-sys" }
 regex = "1"
 rfd = { version = "0.16", default-features = false, features = ["common-controls-v6", "tokio", "gtk3"] }

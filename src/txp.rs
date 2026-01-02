@@ -364,7 +364,10 @@ impl TreeNode for TextureNode {
 					.unwrap()
 					.block_on(async {
 						let Some(file) = rfd::AsyncFileDialog::new()
-							.add_filter("Images", &["jpg", "png", "webp"])
+							.add_filter(
+								"Images (.avif, .bmp, .jpg, .png, .webp)",
+								&["avif", "bmp", "jpg", "jpeg", "png", "webp"],
+							)
 							.set_file_name(format!("{name}.png"))
 							.save_file()
 							.await
@@ -401,7 +404,10 @@ impl TreeNode for TextureNode {
 					.unwrap()
 					.block_on(async {
 						let Some(file) = rfd::AsyncFileDialog::new()
-							.add_filter("Images", &["jpg", "png", "webp"])
+							.add_filter(
+								"Images (.avif, .bmp, .jpg, .png, .webp)",
+								&["avif", "bmp", "jpg", "jpeg", "png", "webp"],
+							)
 							.set_file_name(name)
 							.pick_file()
 							.await
