@@ -256,7 +256,15 @@ impl TextureNode {
 			let rgba = if self.texture.is_ycbcr() {
 				self.texture.decode_ycbcr()
 			} else {
-				mip.rgba()
+				#[cfg(feature = "directxtex")]
+				{
+					mip.rgba()
+				}
+				#[cfg(not(feature = "directxtex"))]
+				{
+					let render_state = &frame.wgpu_render_state().unwrap();
+					mip.to_rgba_gpu(&render_state.device, &render_state.queue)
+				}
 			};
 
 			let Some(rgba) = rgba else {
@@ -546,9 +554,9 @@ impl TreeNode for TextureNode {
 
 						if format != old_format {
 							if format == 0x90 {
-								let rgba = mip.rgba().unwrap_or_default();
 								#[cfg(feature = "directxtex")]
 								{
+									let rgba = mip.rgba().unwrap_or_default();
 									replacement_texture = txp::Texture::encode_ycbcr(
 										mip.width(),
 										mip.height(),
@@ -558,6 +566,9 @@ impl TreeNode for TextureNode {
 								#[cfg(not(feature = "directxtex"))]
 								{
 									let render_state = &frame.wgpu_render_state().unwrap();
+									let rgba = mip
+										.to_rgba_gpu(&render_state.device, &render_state.queue)
+										.unwrap_or_default();
 									replacement_texture = txp::Texture::encode_ycbcr(
 										mip.width() as u32,
 										mip.height() as u32,
@@ -609,9 +620,12 @@ impl TreeNode for TextureNode {
 								tex.set_array_size(self.texture.array_size());
 								tex.set_mipmaps_count(self.texture.mipmaps_count());
 								for mip in self.texture.mipmaps() {
-									let rgba = mip.rgba().unwrap_or_default();
+									if mip.width() < 4 || mip.height() < 4 {
+										break;
+									}
 									#[cfg(feature = "directxtex")]
 									{
+										let rgba = mip.rgba().unwrap_or_default();
 										if let Some(mip) = txp::Mipmap::from_rgba(
 											mip.width(),
 											mip.height(),
@@ -624,6 +638,9 @@ impl TreeNode for TextureNode {
 									#[cfg(not(feature = "directxtex"))]
 									{
 										let render_state = &frame.wgpu_render_state().unwrap();
+										let rgba = mip
+											.to_rgba_gpu(&render_state.device, &render_state.queue)
+											.unwrap_or_default();
 										if let Some(mip) = txp::Mipmap::from_rgba_gpu(
 											mip.width(),
 											mip.height(),

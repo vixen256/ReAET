@@ -668,7 +668,15 @@ impl SpriteInfoNode {
 			let rgba = if texture.texture.is_ycbcr() {
 				texture.texture.decode_ycbcr()
 			} else {
-				mip.rgba()
+				#[cfg(feature = "directxtex")]
+				{
+					mip.rgba()
+				}
+				#[cfg(not(feature = "directxtex"))]
+				{
+					let render_state = &frame.wgpu_render_state().unwrap();
+					mip.to_rgba_gpu(&render_state.device, &render_state.queue)
+				}
 			};
 			let Some(rgba) = rgba else {
 				self.error = Some(String::from("Could not convert texture to rgba"));
@@ -715,7 +723,15 @@ impl SpriteInfoNode {
 			let rgba = if texture.texture.is_ycbcr() {
 				texture.texture.decode_ycbcr()
 			} else {
-				mip.rgba()
+				#[cfg(feature = "directxtex")]
+				{
+					mip.rgba()
+				}
+				#[cfg(not(feature = "directxtex"))]
+				{
+					let render_state = &frame.wgpu_render_state().unwrap();
+					mip.to_rgba_gpu(&render_state.device, &render_state.queue)
+				}
 			};
 			let Some(rgba) = rgba else {
 				self.error = Some(String::from("Failed to convert current texture to RGBA"));
