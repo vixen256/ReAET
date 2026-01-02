@@ -642,11 +642,6 @@ impl SpriteInfoNode {
 		let mut texture = self.texture.try_lock().unwrap();
 		let mip = texture.texture.get_mipmap(0, 0).unwrap();
 
-		let Ok(data) = std::fs::read(&path) else {
-			self.error = Some(format!("Failed to read {:?}", path));
-			return;
-		};
-
 		let Ok(new_image) = image::load(std::io::Cursor::new(data), format) else {
 			self.error = Some(format!("Failed to parse {:?} as image", path));
 			return;
