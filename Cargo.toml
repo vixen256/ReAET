@@ -4,17 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bytemuck = { version = "1.24", features = ["derive"] }
+bytemuck = { version = "1", features = ["derive"] }
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "wayland", "wgpu", "x11"] }
-egui-file-dialog = { version = "0.12", default-features = false, features = ["default_fonts"] }
 egui_dnd = { git = "https://github.com/vixen256/hello_egui" }
-egui_extras = { version = "0.33", features = ["file", "image"] }
+egui_extras = "0.33"
 egui_material_icons = "0.5"
 egui_plot = "0.34"
 glam = "0.30"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "rayon", "webp"] }
 kkdlib = { git = "https://github.com/vixen256/KKdLib-sys" }
-regex = "1.12"
+regex = "1"
+rfd = { version = "0.16", default-features = false, features = ["common-controls-v6", "tokio", "wayland", "gtk3"] }
+tokio = { version = "1", features = ["full"] }
 transform-gizmo-egui = "0.8"
 wgpu = { version = "27.0", default-features = false, features = ["gles", "metal", "parking_lot", "std", "vulkan"] }
 

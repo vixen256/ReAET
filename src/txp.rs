@@ -9,7 +9,7 @@ use image::EncodableLayout;
 use kkdlib::{spr, txp};
 use regex::Regex;
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::*;
 
 pub struct TextureSetNode {
 	pub big_endian: bool,
@@ -110,15 +110,6 @@ impl TreeNode for TextureSetNode {
 			texture.add_mipmap(&mip);
 
 			self.children.push(Rc::new(Mutex::new(TextureNode {
-				file_dialog: egui_file_dialog::FileDialog::new()
-					.show_new_folder_button(false)
-					.add_save_extension("JPEG", "jpg")
-					.add_save_extension("PNG", "png")
-					.add_save_extension("WEBP", "webp")
-					.default_save_extension("PNG")
-					.add_file_filter_extensions("Images", vec!["jpg", "png", "webp"])
-					.default_file_filter("Images")
-					.default_file_name(&name),
 				name,
 				texture,
 				flip: self
@@ -128,7 +119,7 @@ impl TreeNode for TextureSetNode {
 				index: self.children.len() as u32,
 				texture_updated: true,
 				db_entry: None,
-				exporting: false,
+				file_picker_result: None,
 				error: None,
 				want_deletion: false,
 			})));
@@ -167,22 +158,13 @@ impl TextureSetNode {
 				.enumerate()
 				.map(|(i, (name, texture))| {
 					Rc::new(Mutex::new(TextureNode {
-						file_dialog: egui_file_dialog::FileDialog::new()
-							.show_new_folder_button(false)
-							.add_save_extension("JPEG", "jpg")
-							.add_save_extension("PNG", "png")
-							.add_save_extension("WEBP", "webp")
-							.default_save_extension("PNG")
-							.add_file_filter_extensions("Images", vec!["jpg", "png", "webp"])
-							.default_file_filter("Images")
-							.default_file_name(&name),
 						name,
 						texture: texture.clone(),
 						flip: true,
 						index: i as u32,
 						texture_updated: false,
 						db_entry: None,
-						exporting: false,
+						file_picker_result: None,
 						error: None,
 						want_deletion: false,
 					}))
@@ -205,21 +187,13 @@ impl TextureSetNode {
 				.enumerate()
 				.map(|(i, texture)| {
 					Rc::new(Mutex::new(TextureNode {
-						file_dialog: egui_file_dialog::FileDialog::new()
-							.show_new_folder_button(false)
-							.add_save_extension("JPEG", "jpg")
-							.add_save_extension("PNG", "png")
-							.add_save_extension("WEBP", "webp")
-							.default_save_extension("PNG")
-							.add_file_filter_extensions("Images", vec!["jpg", "png", "webp"])
-							.default_file_filter("Images"),
 						name: format!("Texture {i}"),
 						texture: texture.clone(),
 						flip: false,
 						index: i as u32,
 						texture_updated: false,
 						db_entry: None,
-						exporting: false,
+						file_picker_result: None,
 						error: None,
 						want_deletion: false,
 					}))
@@ -237,14 +211,13 @@ pub struct TextureNode {
 	pub index: u32,
 	pub texture_updated: bool,
 	pub db_entry: Option<Rc<Mutex<SprDbEntryNode>>>,
-	pub file_dialog: egui_file_dialog::FileDialog,
-	pub exporting: bool,
+	pub file_picker_result: Option<mpsc::Receiver<Option<(std::path::PathBuf, Vec<u8>)>>>,
 	pub error: Option<String>,
 	pub want_deletion: bool,
 }
 
 impl TextureNode {
-	fn pick_file(&mut self, path: std::path::PathBuf, frame: &mut eframe::Frame) {
+	fn pick_file(&mut self, path: &std::path::PathBuf, data: &[u8], frame: &mut eframe::Frame) {
 		let extension = path.extension().unwrap_or_default();
 		let Some(format) = image::ImageFormat::from_extension(extension) else {
 			self.error = Some(format!("Could not determine format of {:?}", path));
@@ -252,142 +225,103 @@ impl TextureNode {
 		};
 
 		let mip = self.texture.get_mipmap(0, 0).unwrap();
-		if self.exporting {
-			let rgba = if self.texture.is_ycbcr() {
-				self.texture.decode_ycbcr()
-			} else {
-				#[cfg(feature = "directxtex")]
-				{
-					mip.rgba()
-				}
-				#[cfg(not(feature = "directxtex"))]
-				{
-					let render_state = &frame.wgpu_render_state().unwrap();
-					mip.to_rgba_gpu(&render_state.device, &render_state.queue)
-				}
-			};
 
-			let Some(rgba) = rgba else {
-				self.error = Some(String::from("Could not convert texture to RGBA"));
-				return;
-			};
+		let Ok(image) = image::load(std::io::Cursor::new(data), format) else {
+			self.error = Some(format!("Could not read {:?} as image", path));
+			return;
+		};
 
-			let Some(image) =
-				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
-			else {
-				self.error = Some(String::from("Could not load image"));
-				return;
-			};
-
-			if let Err(e) = image::DynamicImage::ImageRgba8(image)
-				.flipv()
-				.save_with_format(path, format)
+		if self.texture.is_ycbcr() {
+			#[cfg(feature = "directxtex")]
 			{
-				self.error = Some(format!("Could not save image {e}"));
+				let Some(texture) = txp::Texture::encode_ycbcr(
+					image.width() as i32,
+					image.height() as i32,
+					image.flipv().to_rgba8().as_bytes(),
+				) else {
+					self.error = Some(String::from("Could not encode image"));
+					return;
+				};
+				self.texture = texture;
+				self.texture_updated = true;
+			}
+			#[cfg(not(feature = "directxtex"))]
+			{
+				let render_state = &frame.wgpu_render_state().unwrap();
+				let Some(texture) = txp::Texture::encode_ycbcr(
+					image.width(),
+					image.height(),
+					image.flipv().to_rgba8().as_bytes(),
+					&render_state.device,
+					&render_state.queue,
+				) else {
+					self.error = Some(String::from("Could not encode image"));
+					return;
+				};
+				self.texture = texture;
+				self.texture_updated = true;
 			}
 		} else {
-			let Ok(data) = std::fs::read(&path) else {
-				self.error = Some(format!("Failed to read {:?}", path));
-				return;
-			};
+			let mut texture = txp::Texture::new();
+			texture.set_has_cube_map(false);
+			texture.set_array_size(1);
+			texture.set_mipmaps_count(self.texture.mipmaps_count());
 
-			let Ok(image) = image::load(std::io::Cursor::new(data), format) else {
-				self.error = Some(format!("Could not read {:?} as image", path));
-				return;
-			};
+			for i in 0..self.texture.mipmaps_count() {
+				let scale = 2_u32.pow(i as u32);
+				let (width, height) = if scale == 0 {
+					(image.width(), image.height())
+				} else {
+					(image.width() / scale, image.height() / scale)
+				};
 
-			if self.texture.is_ycbcr() {
+				if width == 0 || height == 0 {
+					texture.set_mipmaps_count(i);
+					break;
+				}
+
 				#[cfg(feature = "directxtex")]
 				{
-					let Some(texture) = txp::Texture::encode_ycbcr(
-						image.width() as i32,
-						image.height() as i32,
-						image.flipv().to_rgba8().as_bytes(),
+					let Some(mipmap) = txp::Mipmap::from_rgba(
+						width as i32,
+						height as i32,
+						image
+							.flipv()
+							.resize(width, height, image::imageops::FilterType::Lanczos3)
+							.to_rgba8()
+							.as_bytes(),
+						mip.format(),
 					) else {
 						self.error = Some(String::from("Could not encode image"));
 						return;
 					};
-					self.texture = texture;
-					self.texture_updated = true;
+
+					texture.add_mipmap(&mipmap);
 				}
 				#[cfg(not(feature = "directxtex"))]
 				{
 					let render_state = &frame.wgpu_render_state().unwrap();
-					let Some(texture) = txp::Texture::encode_ycbcr(
-						image.width(),
-						image.height(),
-						image.flipv().to_rgba8().as_bytes(),
+					let Some(mipmap) = txp::Mipmap::from_rgba_gpu(
+						width as i32,
+						height as i32,
+						image
+							.flipv()
+							.resize(width, height, image::imageops::FilterType::Lanczos3)
+							.to_rgba8()
+							.as_bytes(),
+						mip.format(),
 						&render_state.device,
 						&render_state.queue,
 					) else {
 						self.error = Some(String::from("Could not encode image"));
 						return;
 					};
-					self.texture = texture;
-					self.texture_updated = true;
+
+					texture.add_mipmap(&mipmap);
 				}
-			} else {
-				let mut texture = txp::Texture::new();
-				texture.set_has_cube_map(false);
-				texture.set_array_size(1);
-				texture.set_mipmaps_count(self.texture.mipmaps_count());
-
-				for i in 0..self.texture.mipmaps_count() {
-					let scale = 2_u32.pow(i as u32);
-					let (width, height) = if scale == 0 {
-						(image.width(), image.height())
-					} else {
-						(image.width() / scale, image.height() / scale)
-					};
-
-					if width == 0 || height == 0 {
-						texture.set_mipmaps_count(i);
-						break;
-					}
-
-					#[cfg(feature = "directxtex")]
-					{
-						let Some(mipmap) = txp::Mipmap::from_rgba(
-							width as i32,
-							height as i32,
-							image
-								.flipv()
-								.resize(width, height, image::imageops::FilterType::Lanczos3)
-								.to_rgba8()
-								.as_bytes(),
-							mip.format(),
-						) else {
-							self.error = Some(String::from("Could not encode image"));
-							return;
-						};
-
-						texture.add_mipmap(&mipmap);
-					}
-					#[cfg(not(feature = "directxtex"))]
-					{
-						let render_state = &frame.wgpu_render_state().unwrap();
-						let Some(mipmap) = txp::Mipmap::from_rgba_gpu(
-							width as i32,
-							height as i32,
-							image
-								.flipv()
-								.resize(width, height, image::imageops::FilterType::Lanczos3)
-								.to_rgba8()
-								.as_bytes(),
-							mip.format(),
-							&render_state.device,
-							&render_state.queue,
-						) else {
-							self.error = Some(String::from("Could not encode image"));
-							return;
-						};
-
-						texture.add_mipmap(&mipmap);
-					}
-				}
-				self.texture = texture;
-				self.texture_updated = true;
 			}
+			self.texture = texture;
+			self.texture_updated = true;
 		}
 	}
 }
@@ -403,12 +337,86 @@ impl TreeNode for TextureNode {
 
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
 		if ui.button("Export").clicked() {
-			self.file_dialog.save_file();
-			self.exporting = true;
+			let mip = self.texture.get_mipmap(0, 0).unwrap();
+
+			let rgba = if self.texture.is_ycbcr() {
+				self.texture.decode_ycbcr()
+			} else {
+				mip.rgba()
+			};
+
+			let Some(rgba) = rgba else {
+				self.error = Some(String::from("Could not convert texture to RGBA"));
+				return;
+			};
+
+			let Some(image) =
+				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+			else {
+				return;
+			};
+
+			let name = self.name.clone();
+			std::thread::spawn(move || {
+				tokio::runtime::Builder::new_current_thread()
+					.enable_io()
+					.build()
+					.unwrap()
+					.block_on(async {
+						let Some(file) = rfd::AsyncFileDialog::new()
+							.add_filter("Images", &["jpg", "png", "webp"])
+							.set_file_name(format!("{name}.png"))
+							.save_file()
+							.await
+						else {
+							return;
+						};
+
+						let path = std::path::PathBuf::from(file.file_name());
+						let extension = path.extension().unwrap_or_default();
+						let Some(format) = image::ImageFormat::from_extension(extension) else {
+							return;
+						};
+
+						let mut buf = std::io::Cursor::new(Vec::new());
+
+						if let Err(_) = image::DynamicImage::ImageRgba8(image)
+							.flipv()
+							.write_to(&mut buf, format)
+						{
+							return;
+						};
+
+						file.write(&buf.into_inner()).await.unwrap();
+					});
+			});
 		}
 		if ui.button("Replace").clicked() {
-			self.file_dialog.pick_file();
-			self.exporting = false;
+			let (tx, rx) = mpsc::channel();
+			let name = self.name.clone();
+			std::thread::spawn(move || {
+				tokio::runtime::Builder::new_current_thread()
+					.enable_io()
+					.build()
+					.unwrap()
+					.block_on(async {
+						let Some(file) = rfd::AsyncFileDialog::new()
+							.add_filter("Images", &["jpg", "png", "webp"])
+							.set_file_name(name)
+							.pick_file()
+							.await
+						else {
+							tx.send(None).unwrap();
+							return;
+						};
+
+						let path = file.path();
+						let data = file.read().await;
+						tx.send(Some((path.to_path_buf(), data))).unwrap();
+					});
+			});
+
+			self.file_picker_result = Some(rx);
 		}
 		if ui.button("Remove").clicked() {
 			self.want_deletion = true;
@@ -432,11 +440,13 @@ impl TreeNode for TextureNode {
 			}
 		}
 
-		self.file_dialog
-			.update_with_right_panel_ui(ui.ctx(), &mut crate::app::file_dialog_right_panel);
-
-		if let Some(path) = self.file_dialog.take_picked() {
-			self.pick_file(path, frame);
+		if let Some(rx) = &mut self.file_picker_result
+			&& let Ok(res) = rx.try_recv()
+		{
+			if let Some((path, data)) = res {
+				self.pick_file(&path, &data, frame);
+			}
+			self.file_picker_result = None;
 		}
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);

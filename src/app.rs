@@ -47,28 +47,8 @@ pub trait TreeNode {
 
 static FARC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.farc$").unwrap());
 static SPRSET: LazyLock<Regex> = LazyLock::new(spr::SpriteSetNode::name_pattern);
-static TXPSET: LazyLock<Regex> = LazyLock::new(txp::TextureSetNode::name_pattern);
 static AETSET: LazyLock<Regex> = LazyLock::new(aet::AetSetNode::name_pattern);
 static SPRDB: LazyLock<Regex> = LazyLock::new(spr_db::SprDbNode::name_pattern);
-
-pub fn file_dialog_right_panel(ui: &mut egui::Ui, dia: &mut egui_file_dialog::FileDialog) {
-	let Some(entry) = dia.selected_entry() else {
-		return;
-	};
-	if !entry.is_file() {
-		return;
-	}
-
-	let extension = entry.as_path().extension().unwrap_or_default();
-	if image::ImageFormat::from_extension(extension).is_none() {
-		return;
-	}
-
-	ui.image(format!(
-		"file://{}",
-		entry.as_path().to_str().unwrap_or_default()
-	));
-}
 
 // Based on egui::util::Undoer
 pub struct LayerUndoer {
@@ -182,7 +162,7 @@ pub struct App {
 	spr_db: Option<spr_db::SprDbNode>,
 	spr_db_filepath: Option<PathBuf>,
 	selected: Vec<usize>,
-	file_dialog: egui_file_dialog::FileDialog,
+	file_picker_result: Option<mpsc::Receiver<Option<(std::path::PathBuf, Vec<u8>)>>>,
 
 	undoer: LayerUndoer,
 }
@@ -192,28 +172,12 @@ impl App {
 		cc.egui_ctx.set_zoom_factor(1.2);
 		cc.egui_ctx.set_theme(egui::Theme::Light);
 
-		egui_extras::install_image_loaders(&cc.egui_ctx);
 		egui_material_icons::initialize(&cc.egui_ctx);
 		cc.egui_ctx
 			.style_mut(|style| style.spacing.scroll = egui::style::ScrollStyle::solid());
 
 		let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
 		txp::setup_wgpu(wgpu_render_state);
-
-		let file_dialog = egui_file_dialog::FileDialog::new()
-			.show_new_folder_button(false)
-			.add_file_filter(
-				"Known diva files",
-				Arc::new(|path| {
-					let path = path.file_name().unwrap().to_str().unwrap();
-					FARC.is_match(path)
-						|| SPRSET.is_match(path)
-						|| TXPSET.is_match(path)
-						|| AETSET.is_match(path)
-						|| SPRDB.is_match(path)
-				}),
-			)
-			.default_file_filter("Known diva files");
 
 		Some(Self {
 			aet_set: None,
@@ -223,7 +187,7 @@ impl App {
 			spr_db: None,
 			spr_db_filepath: None,
 			selected: Vec::new(),
-			file_dialog,
+			file_picker_result: None,
 			undoer: LayerUndoer::new(),
 		})
 	}
@@ -732,20 +696,42 @@ impl eframe::App for App {
 				.feed_state(ctx.input(|input| input.time), &self.selected, aet_set);
 		}
 
-		self.file_dialog
-			.update_with_right_panel_ui(ctx, &mut file_dialog_right_panel);
-
-		if let Some(path) = self.file_dialog.take_picked() {
-			if let Ok(data) = std::fs::read(&path) {
+		if let Some(rx) = &mut self.file_picker_result
+			&& let Ok(res) = rx.try_recv()
+		{
+			if let Some((path, data)) = res {
 				self.set_file(frame, &path, &data);
 			}
+			self.file_picker_result = None;
 		}
 
 		egui::TopBottomPanel::new(egui::panel::TopBottomSide::Top, "MenuBar").show(ctx, |ui| {
 			egui::MenuBar::new().ui(ui, |ui| {
 				ui.menu_button("File", |ui| {
 					if ui.button("Open").clicked() {
-						self.file_dialog.pick_file();
+						let (tx, rx) = mpsc::channel();
+						std::thread::spawn(move || {
+							tokio::runtime::Builder::new_current_thread()
+								.enable_io()
+								.build()
+								.unwrap()
+								.block_on(async {
+									let Some(file) = rfd::AsyncFileDialog::new()
+										.add_filter("DIVA", &["farc", "bin"])
+										.pick_file()
+										.await
+									else {
+										tx.send(None).unwrap();
+										return;
+									};
+
+									let path = file.path();
+									let data = file.read().await;
+									tx.send(Some((path.to_path_buf(), data))).unwrap();
+								});
+						});
+
+						self.file_picker_result = Some(rx);
 						self.selected = Vec::new();
 						ui.close();
 					}

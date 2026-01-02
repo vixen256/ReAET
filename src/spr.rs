@@ -9,7 +9,7 @@ use image::{EncodableLayout, GenericImage};
 use kkdlib::spr;
 use regex::Regex;
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::*;
 
 pub struct SpriteSetNode {
 	pub name: String,
@@ -565,14 +565,6 @@ impl TreeNode for SpriteInfosNode {
 				.lock()
 				.unwrap()
 				.push(Rc::new(Mutex::new(SpriteInfoNode {
-					file_dialog: egui_file_dialog::FileDialog::new()
-						.show_new_folder_button(false)
-						.add_save_extension("JPEG", "jpg")
-						.add_save_extension("PNG", "png")
-						.add_save_extension("WEBP", "webp")
-						.default_save_extension("PNG")
-						.add_file_filter_extensions("Images", vec!["jpg", "png", "webp"])
-						.default_file_filter("Images"),
 					name: format!("Sprite {}", len),
 					info,
 					texture: Rc::new(Mutex::new(TextureNode {
@@ -582,15 +574,14 @@ impl TreeNode for SpriteInfosNode {
 						index: 0,
 						texture_updated: false,
 						db_entry: None,
-						file_dialog: egui_file_dialog::FileDialog::new(),
-						exporting: false,
+						file_picker_result: None,
 						error: None,
 						want_deletion: false,
 					})),
 					texture_names: self.texture_names.clone(),
 					want_new_texture: Some(0),
 					db_entry: None,
-					exporting: false,
+					file_picker_result: None,
 					error: None,
 					want_deletion: false,
 				})));
@@ -610,22 +601,13 @@ impl SpriteInfosNode {
 					.filter(|(_, info)| (info.texid() as usize) < textures_node.children.len())
 					.map(|(name, info)| {
 						Rc::new(Mutex::new(SpriteInfoNode {
-							file_dialog: egui_file_dialog::FileDialog::new()
-								.show_new_folder_button(false)
-								.add_save_extension("JPEG", "jpg")
-								.add_save_extension("PNG", "png")
-								.add_save_extension("WEBP", "webp")
-								.default_save_extension("PNG")
-								.add_file_filter_extensions("Images", vec!["jpg", "png", "webp"])
-								.default_file_filter("Images")
-								.default_file_name(&name),
 							name,
 							info: info.clone(),
 							texture: textures_node.children[info.texid() as usize].clone(),
 							texture_names: texture_names.clone(),
 							want_new_texture: None,
 							db_entry: None,
-							exporting: false,
+							file_picker_result: None,
 							error: None,
 							want_deletion: false,
 						}))
@@ -644,14 +626,13 @@ pub struct SpriteInfoNode {
 	pub texture_names: Rc<Mutex<Vec<String>>>,
 	pub want_new_texture: Option<u32>,
 	pub db_entry: Option<Rc<Mutex<SprDbEntryNode>>>,
-	pub file_dialog: egui_file_dialog::FileDialog,
-	pub exporting: bool,
+	pub file_picker_result: Option<mpsc::Receiver<Option<(std::path::PathBuf, Vec<u8>)>>>,
 	pub error: Option<String>,
 	pub want_deletion: bool,
 }
 
 impl SpriteInfoNode {
-	fn pick_file(&mut self, path: std::path::PathBuf, frame: &mut eframe::Frame) {
+	fn pick_file(&mut self, path: &std::path::PathBuf, data: &[u8], frame: &mut eframe::Frame) {
 		let extension = path.extension().unwrap_or_default();
 		let Some(format) = image::ImageFormat::from_extension(extension) else {
 			self.error = Some(format!("Could not determine format of {:?}", path));
@@ -661,169 +642,131 @@ impl SpriteInfoNode {
 		let mut texture = self.texture.try_lock().unwrap();
 		let mip = texture.texture.get_mipmap(0, 0).unwrap();
 
-		if self.exporting {
-			let rgba = if texture.texture.is_ycbcr() {
-				texture.texture.decode_ycbcr()
-			} else {
-				#[cfg(feature = "directxtex")]
-				{
-					mip.rgba()
-				}
-				#[cfg(not(feature = "directxtex"))]
-				{
-					let render_state = &frame.wgpu_render_state().unwrap();
-					mip.to_rgba_gpu(&render_state.device, &render_state.queue)
-				}
-			};
-			let Some(rgba) = rgba else {
-				self.error = Some(String::from("Could not convert texture to rgba"));
-				return;
-			};
-			let Some(image) =
-				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
-			else {
-				self.error = Some(String::from("Could not load image"));
-				return;
-			};
-			if let Err(e) = image::DynamicImage::ImageRgba8(image)
-				.flipv()
-				.crop(
-					self.info.px() as u32,
-					self.info.py() as u32,
-					self.info.width() as u32,
-					self.info.height() as u32,
-				)
-				.save_with_format(path, format)
+		let Ok(data) = std::fs::read(&path) else {
+			self.error = Some(format!("Failed to read {:?}", path));
+			return;
+		};
+
+		let Ok(new_image) = image::load(std::io::Cursor::new(data), format) else {
+			self.error = Some(format!("Failed to parse {:?} as image", path));
+			return;
+		};
+
+		if new_image.width() != self.info.width() as u32
+			|| new_image.height() != self.info.height() as u32
+		{
+			self.error = Some(String::from(
+				"New image did match dimensions of current sprite",
+			));
+			return;
+		}
+
+		let rgba = if texture.texture.is_ycbcr() {
+			texture.texture.decode_ycbcr()
+		} else {
+			#[cfg(feature = "directxtex")]
 			{
-				self.error = Some(format!("Image failed to save: {e}"));
+				mip.rgba()
+			}
+			#[cfg(not(feature = "directxtex"))]
+			{
+				let render_state = &frame.wgpu_render_state().unwrap();
+				mip.to_rgba_gpu(&render_state.device, &render_state.queue)
+			}
+		};
+		let Some(rgba) = rgba else {
+			self.error = Some(String::from("Failed to convert current texture to RGBA"));
+			return;
+		};
+		let Some(mut image) =
+			image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+		else {
+			self.error = Some(String::from("Could not load image"));
+			return;
+		};
+
+		if let Err(e) = image.copy_from(
+			&new_image.flipv(),
+			self.info.px() as u32,
+			mip.height() as u32 - self.info.py() as u32 - self.info.height() as u32,
+		) {
+			self.error = Some(format!("Could not copy sprite into current image {e}"));
+			return;
+		}
+
+		if texture.texture.is_ycbcr() {
+			#[cfg(feature = "directxtex")]
+			{
+				let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
+					image.width() as i32,
+					image.height() as i32,
+					image.as_bytes(),
+				) else {
+					self.error = Some(String::from("Could not encode image"));
+					return;
+				};
+				texture.texture = tex;
+				texture.texture_updated = true;
+			}
+			#[cfg(not(feature = "directxtex"))]
+			{
+				let render_state = &frame.wgpu_render_state().unwrap();
+				let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
+					image.width(),
+					image.height(),
+					image.as_bytes(),
+					&render_state.device,
+					&render_state.queue,
+				) else {
+					self.error = Some(String::from("Could not encode image"));
+					return;
+				};
+				texture.texture = tex;
+				texture.texture_updated = true;
 			}
 		} else {
-			let Ok(data) = std::fs::read(&path) else {
-				self.error = Some(format!("Failed to read {:?}", path));
-				return;
-			};
-
-			let Ok(new_image) = image::load(std::io::Cursor::new(data), format) else {
-				self.error = Some(format!("Failed to parse {:?} as image", path));
-				return;
-			};
-
-			if new_image.width() != self.info.width() as u32
-				|| new_image.height() != self.info.height() as u32
+			#[cfg(feature = "directxtex")]
 			{
-				self.error = Some(String::from(
-					"New image did match dimensions of current sprite",
-				));
-				return;
+				let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba(
+					image.width() as i32,
+					image.height() as i32,
+					image.as_bytes(),
+					mip.format(),
+				) else {
+					self.error = Some(String::from("Could not encode texture"));
+					return;
+				};
+
+				let mut tex = kkdlib::txp::Texture::new();
+				tex.set_has_cube_map(false);
+				tex.set_array_size(1);
+				tex.set_mipmaps_count(1);
+				tex.add_mipmap(&mipmap);
+				texture.texture = tex;
+				texture.texture_updated = true;
 			}
+			#[cfg(not(feature = "directxtex"))]
+			{
+				let render_state = &frame.wgpu_render_state().unwrap();
+				let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
+					image.width() as i32,
+					image.height() as i32,
+					image.as_bytes(),
+					mip.format(),
+					&render_state.device,
+					&render_state.queue,
+				) else {
+					self.error = Some(String::from("Could not encode texture"));
+					return;
+				};
 
-			let rgba = if texture.texture.is_ycbcr() {
-				texture.texture.decode_ycbcr()
-			} else {
-				#[cfg(feature = "directxtex")]
-				{
-					mip.rgba()
-				}
-				#[cfg(not(feature = "directxtex"))]
-				{
-					let render_state = &frame.wgpu_render_state().unwrap();
-					mip.to_rgba_gpu(&render_state.device, &render_state.queue)
-				}
-			};
-			let Some(rgba) = rgba else {
-				self.error = Some(String::from("Failed to convert current texture to RGBA"));
-				return;
-			};
-			let Some(mut image) =
-				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
-			else {
-				self.error = Some(String::from("Could not load image"));
-				return;
-			};
-
-			if let Err(e) = image.copy_from(
-				&new_image.flipv(),
-				self.info.px() as u32,
-				mip.height() as u32 - self.info.py() as u32 - self.info.height() as u32,
-			) {
-				self.error = Some(format!("Could not copy sprite into current image {e}"));
-				return;
-			}
-
-			if texture.texture.is_ycbcr() {
-				#[cfg(feature = "directxtex")]
-				{
-					let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
-						image.width() as i32,
-						image.height() as i32,
-						image.as_bytes(),
-					) else {
-						self.error = Some(String::from("Could not encode image"));
-						return;
-					};
-					texture.texture = tex;
-					texture.texture_updated = true;
-				}
-				#[cfg(not(feature = "directxtex"))]
-				{
-					let render_state = &frame.wgpu_render_state().unwrap();
-					let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
-						image.width(),
-						image.height(),
-						image.as_bytes(),
-						&render_state.device,
-						&render_state.queue,
-					) else {
-						self.error = Some(String::from("Could not encode image"));
-						return;
-					};
-					texture.texture = tex;
-					texture.texture_updated = true;
-				}
-			} else {
-				#[cfg(feature = "directxtex")]
-				{
-					let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba(
-						image.width() as i32,
-						image.height() as i32,
-						image.as_bytes(),
-						mip.format(),
-					) else {
-						self.error = Some(String::from("Could not encode texture"));
-						return;
-					};
-
-					let mut tex = kkdlib::txp::Texture::new();
-					tex.set_has_cube_map(false);
-					tex.set_array_size(1);
-					tex.set_mipmaps_count(1);
-					tex.add_mipmap(&mipmap);
-					texture.texture = tex;
-					texture.texture_updated = true;
-				}
-				#[cfg(not(feature = "directxtex"))]
-				{
-					let render_state = &frame.wgpu_render_state().unwrap();
-					let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
-						image.width() as i32,
-						image.height() as i32,
-						image.as_bytes(),
-						mip.format(),
-						&render_state.device,
-						&render_state.queue,
-					) else {
-						self.error = Some(String::from("Could not encode texture"));
-						return;
-					};
-
-					let mut tex = kkdlib::txp::Texture::new();
-					tex.set_has_cube_map(false);
-					tex.set_array_size(1);
-					tex.set_mipmaps_count(1);
-					tex.add_mipmap(&mipmap);
-					texture.texture = tex;
-					texture.texture_updated = true;
-				}
+				let mut tex = kkdlib::txp::Texture::new();
+				tex.set_has_cube_map(false);
+				tex.set_array_size(1);
+				tex.set_mipmaps_count(1);
+				tex.add_mipmap(&mipmap);
+				texture.texture = tex;
+				texture.texture_updated = true;
 			}
 		}
 	}
@@ -840,12 +783,93 @@ impl TreeNode for SpriteInfoNode {
 
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
 		if ui.button("Export").clicked() {
-			self.file_dialog.save_file();
-			self.exporting = true;
+			let texture = self.texture.try_lock().unwrap();
+			let mip = texture.texture.get_mipmap(0, 0).unwrap();
+
+			let rgba = if texture.texture.is_ycbcr() {
+				texture.texture.decode_ycbcr()
+			} else {
+				mip.rgba()
+			};
+
+			let Some(rgba) = rgba else {
+				self.error = Some(String::from("Could not convert texture to RGBA"));
+				return;
+			};
+
+			let Some(image) =
+				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+			else {
+				self.error = Some(String::from("Could not load image"));
+				return;
+			};
+
+			let name = self.name.clone();
+			let crop_x = self.info.px() as u32;
+			let crop_y = self.info.py() as u32;
+			let crop_w = self.info.width() as u32;
+			let crop_h = self.info.height() as u32;
+			std::thread::spawn(move || {
+				tokio::runtime::Builder::new_current_thread()
+					.enable_io()
+					.build()
+					.unwrap()
+					.block_on(async {
+						let Some(file) = rfd::AsyncFileDialog::new()
+							.add_filter("Images", &["jpg", "png", "webp"])
+							.set_file_name(format!("{name}.png"))
+							.save_file()
+							.await
+						else {
+							return;
+						};
+
+						let path = std::path::PathBuf::from(file.file_name());
+						let extension = path.extension().unwrap_or_default();
+						let Some(format) = image::ImageFormat::from_extension(extension) else {
+							return;
+						};
+
+						let mut buf = std::io::Cursor::new(Vec::new());
+
+						if let Err(_) = image::DynamicImage::ImageRgba8(image)
+							.flipv()
+							.crop(crop_x, crop_y, crop_w, crop_h)
+							.write_to(&mut buf, format)
+						{
+							return;
+						};
+
+						file.write(&buf.into_inner()).await.unwrap();
+					});
+			});
 		}
 		if ui.button("Replace").clicked() {
-			self.file_dialog.pick_file();
-			self.exporting = false;
+			let (tx, rx) = mpsc::channel();
+			let name = self.name.clone();
+			std::thread::spawn(move || {
+				tokio::runtime::Builder::new_current_thread()
+					.enable_io()
+					.build()
+					.unwrap()
+					.block_on(async {
+						let Some(file) = rfd::AsyncFileDialog::new()
+							.add_filter("Images", &["jpg", "png", "webp"])
+							.set_file_name(name)
+							.pick_file()
+							.await
+						else {
+							tx.send(None).unwrap();
+							return;
+						};
+
+						let path = file.path();
+						let data = file.read().await;
+						tx.send(Some((path.to_path_buf(), data))).unwrap();
+					});
+			});
+
+			self.file_picker_result = Some(rx);
 		}
 		if ui.button("Remove").clicked() {
 			self.want_deletion = true;
@@ -869,11 +893,13 @@ impl TreeNode for SpriteInfoNode {
 			}
 		}
 
-		self.file_dialog
-			.update_with_right_panel_ui(ui.ctx(), &mut crate::app::file_dialog_right_panel);
-
-		if let Some(path) = self.file_dialog.take_picked() {
-			self.pick_file(path, frame);
+		if let Some(rx) = &mut self.file_picker_result
+			&& let Ok(res) = rx.try_recv()
+		{
+			if let Some((path, data)) = res {
+				self.pick_file(&path, &data, frame);
+			}
+			self.file_picker_result = None;
 		}
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);
