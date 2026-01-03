@@ -764,9 +764,6 @@ impl AetSceneNode {
 
 								for key in &mut video.rot_z.keys {
 									key.value -= delta.to_degrees() as f32;
-									if key.value.is_sign_negative() {
-										key.value += 360.0;
-									}
 								}
 							}
 						}
@@ -827,21 +824,21 @@ pub fn calc_mat(m: &mut Mat4, opacity: &mut f32, video: &aet::LayerVideo, frame:
 	}
 
 	m.w = m.x * pos[0] + m.y * pos[1] + m.z * -pos[2] + m.w;
-	if dir[0] > 0.0 {
+	if dir[0] != 0.0 {
 		let rad = -dir[0].to_radians();
 		let y = m.y;
 		let z = m.z;
 		m.y = y * rad.cos() + z * rad.sin();
 		m.z = y * -rad.sin() + z * rad.cos();
 	}
-	if dir[1] > 0.0 {
+	if dir[1] != 0.0 {
 		let rad = -dir[1].to_radians();
 		let x = m.x;
 		let z = m.z;
 		m.x = x * rad.cos() + z * -rad.sin();
 		m.z = x * rad.sin() + z * rad.cos();
 	}
-	if dir[2] > 0.0 {
+	if dir[2] != 0.0 {
 		let rad = dir[2].to_radians();
 		let x = m.x;
 		let y = m.y;
@@ -849,21 +846,21 @@ pub fn calc_mat(m: &mut Mat4, opacity: &mut f32, video: &aet::LayerVideo, frame:
 		m.y = x * -rad.sin() + y * rad.cos();
 	}
 
-	if rot[0] > 0.0 {
+	if rot[0] != 0.0 {
 		let rad = -rot[0].to_radians();
 		let y = m.y;
 		let z = m.z;
 		m.y = y * rad.cos() + z * rad.sin();
 		m.z = y * -rad.sin() + z * rad.cos();
 	}
-	if rot[1] > 0.0 {
+	if rot[1] != 0.0 {
 		let rad = -rot[1].to_radians();
 		let x = m.x;
 		let z = m.z;
 		m.x = x * rad.cos() + z * -rad.sin();
 		m.z = x * rad.sin() + z * rad.cos();
 	}
-	if rot[2] > 0.0 {
+	if rot[2] != 0.0 {
 		let rad = rot[2].to_radians();
 		let x = m.x;
 		let y = m.y;
