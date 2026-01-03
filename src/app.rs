@@ -54,6 +54,7 @@ static SPRDB: LazyLock<Regex> = LazyLock::new(spr_db::SprDbNode::name_pattern);
 // Based on egui::util::Undoer
 pub struct LayerUndoer {
 	undos: VecDeque<(aet::AetLayerNode, Vec<usize>)>,
+	redos: Vec<(aet::AetLayerNode, Vec<usize>)>,
 	original_layer: aet::AetLayerNode,
 	current_path: Vec<usize>,
 	flux: Option<(f64, aet::AetLayerNode)>,
@@ -63,6 +64,7 @@ impl LayerUndoer {
 	pub fn new() -> Self {
 		Self {
 			undos: VecDeque::new(),
+			redos: Vec::new(),
 			original_layer: aet::AetLayerNode {
 				name: String::from("DUMMY"),
 				start_time: 0.0,
@@ -94,14 +96,25 @@ impl LayerUndoer {
 		}
 	}
 
+	pub fn has_redo(&self) -> bool {
+		!self.redos.is_empty() && self.flux.is_none()
+	}
+
 	pub fn undo(&mut self) -> Option<(aet::AetLayerNode, Vec<usize>)> {
 		if self.flux.is_some() {
 			self.flux = None;
-			Some((self.original_layer.clone(), self.current_path.clone()))
+			let res = (self.original_layer.clone(), self.current_path.clone());
+			self.current_path = Vec::new();
+			Some(res)
 		} else {
-			let undone = self.undos.pop_back();
-			undone
+			self.current_path = Vec::new();
+			self.undos.pop_back()
 		}
+	}
+
+	pub fn redo(&mut self) -> Option<(aet::AetLayerNode, Vec<usize>)> {
+		self.current_path = Vec::new();
+		self.redos.pop()
 	}
 
 	// Adds a state *before* changes
@@ -110,6 +123,12 @@ impl LayerUndoer {
 		if self.undos.len() > 100 {
 			self.undos.pop_front();
 		}
+		self.redos.clear();
+		self.flux = None;
+	}
+
+	pub fn add_redo(&mut self, layer: aet::AetLayerNode, path: Vec<usize>) {
+		self.redos.push((layer, path));
 		self.flux = None;
 	}
 
@@ -678,6 +697,7 @@ impl App {
 		}
 	}
 
+	// Native only
 	fn save_files(&self) {
 		if let Some(aet_set) = &self.aet_set
 			&& let Some(path) = &self.aet_set_filepath
@@ -707,6 +727,195 @@ impl App {
 			_ = std::fs::write(path, &data);
 		}
 	}
+
+	// Native only
+	fn save_files_to(&self) {
+		let aet_set = if let Some(aet_set) = &self.aet_set {
+			Some((aet_set.raw_data(), aet_set.name.clone()))
+		} else {
+			None
+		};
+
+		let sprite_set = if let Some(sprite_set) = &self.sprite_set
+			&& let Some(path) = &self.sprite_set_filepath
+		{
+			let data = sprite_set.raw_data();
+			if path.extension() == Some(std::ffi::OsString::from("farc").as_os_str()) {
+				let mut farc = kkdlib::farc::Farc::new();
+				farc.add_file_data(&sprite_set.name, &data);
+				let data = farc.to_buf().unwrap_or_default();
+				Some((
+					data,
+					path.file_name().unwrap().to_string_lossy().to_string(),
+				))
+			} else {
+				Some((data, sprite_set.name.clone()))
+			}
+		} else {
+			None
+		};
+
+		let spr_db = if let Some(spr_db) = &self.spr_db {
+			Some((spr_db.raw_data(), spr_db.filename.clone()))
+		} else {
+			None
+		};
+
+		std::thread::spawn(move || {
+			tokio::runtime::Builder::new_current_thread()
+				.enable_io()
+				.build()
+				.unwrap()
+				.block_on(async {
+					let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await else {
+						return;
+					};
+
+					let path = folder.path();
+					if let Some((aet_set, name)) = aet_set {
+						std::fs::write(path.join(name), aet_set).unwrap();
+					}
+					if let Some((sprite_set, name)) = sprite_set {
+						std::fs::write(path.join(name), sprite_set).unwrap();
+					}
+					if let Some((spr_db, name)) = spr_db {
+						std::fs::write(path.join(name), spr_db).unwrap();
+					}
+				});
+		});
+	}
+}
+
+fn apply_redo(aet_set: &mut aet::AetSetNode, undoer: &mut LayerUndoer) {
+	let Some((undone, path)) = undoer.redo() else {
+		return;
+	};
+	if path.len() == 2 {
+		let aet::AetItemNode::Comp(comp) = undone.item else {
+			panic!()
+		};
+
+		for layer in &comp.layers {
+			let mut layer = layer.try_lock().unwrap();
+			layer.want_deletion = false;
+			layer.want_duplicate = false;
+		}
+
+		undoer.add_undo(
+			aet::AetLayerNode {
+				name: String::from("DUMMY"),
+				start_time: 0.0,
+				end_time: 0.0,
+				offset_time: 0.0,
+				time_scale: 1.0,
+				flags: kkdlib::aet::LayerFlags::new(),
+				quality: kkdlib::aet::LayerQuality::None,
+				item: aet::AetItemNode::Comp(aet_set.scenes[path[1]].root.clone()),
+				markers: Vec::new(),
+				video: None,
+				parent: None,
+				audio: None,
+				sprites: Rc::new(Mutex::new(Vec::new())),
+				visible: false,
+				selected_key: 0,
+				want_deletion: false,
+				want_duplicate: false,
+			},
+			path.clone(),
+		);
+
+		aet_set.scenes[path[1]].root = comp;
+	} else {
+		let layer = path.iter().skip(3).fold(
+			aet_set.scenes[path[1]].root.layers[path[2]].clone(),
+			|layer, i| {
+				let layer = layer.try_lock().unwrap();
+				let aet::AetItemNode::Comp(comp) = &layer.item else {
+					panic!();
+				};
+
+				comp.layers[*i].clone()
+			},
+		);
+
+		if let aet::AetItemNode::Comp(comp) = &undone.item {
+			for layer in &comp.layers {
+				let mut layer = layer.try_lock().unwrap();
+				layer.want_deletion = false;
+				layer.want_duplicate = false;
+			}
+		}
+
+		let mut layer = layer.try_lock().unwrap();
+		undoer.add_undo(layer.clone(), path);
+		*layer = undone;
+	}
+}
+
+fn apply_undo(aet_set: &mut aet::AetSetNode, undoer: &mut LayerUndoer) {
+	let Some((undone, path)) = undoer.undo() else {
+		return;
+	};
+	if path.len() == 2 {
+		let aet::AetItemNode::Comp(comp) = undone.item else {
+			panic!()
+		};
+
+		for layer in &comp.layers {
+			let mut layer = layer.try_lock().unwrap();
+			layer.want_deletion = false;
+			layer.want_duplicate = false;
+		}
+
+		undoer.add_redo(
+			aet::AetLayerNode {
+				name: String::from("DUMMY"),
+				start_time: 0.0,
+				end_time: 0.0,
+				offset_time: 0.0,
+				time_scale: 1.0,
+				flags: kkdlib::aet::LayerFlags::new(),
+				quality: kkdlib::aet::LayerQuality::None,
+				item: aet::AetItemNode::Comp(aet_set.scenes[path[1]].root.clone()),
+				markers: Vec::new(),
+				video: None,
+				parent: None,
+				audio: None,
+				sprites: Rc::new(Mutex::new(Vec::new())),
+				visible: false,
+				selected_key: 0,
+				want_deletion: false,
+				want_duplicate: false,
+			},
+			path.clone(),
+		);
+
+		aet_set.scenes[path[1]].root = comp;
+	} else {
+		let layer = path.iter().skip(3).fold(
+			aet_set.scenes[path[1]].root.layers[path[2]].clone(),
+			|layer, i| {
+				let layer = layer.try_lock().unwrap();
+				let aet::AetItemNode::Comp(comp) = &layer.item else {
+					panic!();
+				};
+
+				comp.layers[*i].clone()
+			},
+		);
+
+		if let aet::AetItemNode::Comp(comp) = &undone.item {
+			for layer in &comp.layers {
+				let mut layer = layer.try_lock().unwrap();
+				layer.want_deletion = false;
+				layer.want_duplicate = false;
+			}
+		}
+
+		let mut layer = layer.try_lock().unwrap();
+		undoer.add_redo(layer.clone(), path);
+		*layer = undone;
+	}
 }
 
 const OPEN_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
@@ -719,6 +928,11 @@ const SAVE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 	logical_key: egui::Key::S,
 };
 
+const SAVE_TO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+	logical_key: egui::Key::S,
+};
+
 const CLOSE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 	modifiers: egui::Modifiers::COMMAND,
 	logical_key: egui::Key::W,
@@ -727,6 +941,11 @@ const CLOSE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 const UNDO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 	modifiers: egui::Modifiers::COMMAND,
 	logical_key: egui::Key::Z,
+};
+
+const REDO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND,
+	logical_key: egui::Key::Y,
 };
 
 impl eframe::App for App {
@@ -768,6 +987,10 @@ impl eframe::App for App {
 				self.selected = Vec::new();
 			}
 
+			if input.consume_shortcut(&SAVE_TO_SHORTCUT) {
+				self.save_files_to();
+			}
+
 			if input.consume_shortcut(&SAVE_SHORTCUT) {
 				self.save_files();
 			}
@@ -783,45 +1006,20 @@ impl eframe::App for App {
 			}
 
 			if let Some(aet_set) = &mut self.aet_set {
-				if self.undoer.has_undo()
-					&& input.consume_shortcut(&UNDO_SHORTCUT)
-					&& let Some((undone, path)) = self.undoer.undo()
-				{
-					if path.len() == 2 {
-						let aet::AetItemNode::Comp(comp) = undone.item else {
-							panic!()
-						};
+				if self.undoer.has_undo() && input.consume_shortcut(&UNDO_SHORTCUT) {
+					apply_undo(aet_set, &mut self.undoer);
 
-						for layer in &comp.layers {
-							let mut layer = layer.try_lock().unwrap();
-							layer.want_deletion = false;
-							layer.want_duplicate = false;
+					if let Some(spr_db) = &self.spr_db
+						&& let Some(spr_set) = &self.sprite_set
+					{
+						for scene in &mut aet_set.scenes {
+							scene.root.update_video_textures(spr_db, spr_set);
 						}
-
-						aet_set.scenes[path[1]].root = comp;
-					} else {
-						let layer = path.iter().skip(3).fold(
-							aet_set.scenes[path[1]].root.layers[path[2]].clone(),
-							|layer, i| {
-								let layer = layer.try_lock().unwrap();
-								let aet::AetItemNode::Comp(comp) = &layer.item else {
-									panic!();
-								};
-
-								comp.layers[*i].clone()
-							},
-						);
-
-						if let aet::AetItemNode::Comp(comp) = &undone.item {
-							for layer in &comp.layers {
-								let mut layer = layer.try_lock().unwrap();
-								layer.want_deletion = false;
-								layer.want_duplicate = false;
-							}
-						}
-
-						*layer.try_lock().unwrap() = undone;
 					}
+				}
+
+				if self.undoer.has_redo() && input.consume_shortcut(&REDO_SHORTCUT) {
+					apply_redo(aet_set, &mut self.undoer);
 
 					if let Some(spr_db) = &self.spr_db
 						&& let Some(spr_set) = &self.sprite_set
@@ -886,7 +1084,10 @@ impl eframe::App for App {
 					}
 
 					if ui
-						.add(
+						.add_enabled(
+							self.aet_set.is_some()
+								|| self.sprite_set.is_some()
+								|| self.spr_db.is_some(),
 							egui::Button::new("Save")
 								.shortcut_text(ctx.format_shortcut(&SAVE_SHORTCUT)),
 						)
@@ -896,7 +1097,23 @@ impl eframe::App for App {
 					}
 
 					if ui
-						.add(
+						.add_enabled(
+							self.aet_set.is_some()
+								|| self.sprite_set.is_some()
+								|| self.spr_db.is_some(),
+							egui::Button::new("Save To")
+								.shortcut_text(ctx.format_shortcut(&SAVE_TO_SHORTCUT)),
+						)
+						.clicked()
+					{
+						self.save_files_to();
+					}
+
+					if ui
+						.add_enabled(
+							self.aet_set.is_some()
+								|| self.sprite_set.is_some()
+								|| self.spr_db.is_some(),
 							egui::Button::new("Close")
 								.shortcut_text(ctx.format_shortcut(&CLOSE_SHORTCUT)),
 						)
@@ -920,43 +1137,28 @@ impl eframe::App for App {
 								egui::Button::new("Undo")
 									.shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
 							)
-							.clicked() && let Some((undone, path)) = self.undoer.undo()
+							.clicked()
 						{
-							if path.len() == 2 {
-								let aet::AetItemNode::Comp(comp) = undone.item else {
-									panic!()
-								};
+							apply_undo(aet_set, &mut self.undoer);
 
-								for layer in &comp.layers {
-									let mut layer = layer.try_lock().unwrap();
-									layer.want_deletion = false;
-									layer.want_duplicate = false;
+							if let Some(spr_db) = &self.spr_db
+								&& let Some(spr_set) = &self.sprite_set
+							{
+								for scene in &mut aet_set.scenes {
+									scene.root.update_video_textures(spr_db, spr_set);
 								}
-
-								aet_set.scenes[path[1]].root = comp;
-							} else {
-								let layer = path.iter().skip(3).fold(
-									aet_set.scenes[path[1]].root.layers[path[2]].clone(),
-									|layer, i| {
-										let layer = layer.try_lock().unwrap();
-										let aet::AetItemNode::Comp(comp) = &layer.item else {
-											panic!();
-										};
-
-										comp.layers[*i].clone()
-									},
-								);
-
-								if let aet::AetItemNode::Comp(comp) = &undone.item {
-									for layer in &comp.layers {
-										let mut layer = layer.try_lock().unwrap();
-										layer.want_deletion = false;
-										layer.want_duplicate = false;
-									}
-								}
-
-								*layer.try_lock().unwrap() = undone;
 							}
+						}
+
+						if ui
+							.add_enabled(
+								self.undoer.has_redo(),
+								egui::Button::new("Redo")
+									.shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
+							)
+							.clicked()
+						{
+							apply_redo(aet_set, &mut self.undoer);
 
 							if let Some(spr_db) = &self.spr_db
 								&& let Some(spr_set) = &self.sprite_set
@@ -971,6 +1173,11 @@ impl eframe::App for App {
 							false,
 							egui::Button::new("Undo")
 								.shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
+						);
+						ui.add_enabled(
+							false,
+							egui::Button::new("Redo")
+								.shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
 						);
 					}
 				});
