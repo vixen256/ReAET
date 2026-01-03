@@ -697,15 +697,12 @@ impl AetSceneNode {
 					projection_matrix: glam::DMat4::from_cols_array_2d(&[
 						[2.0 / self.width as f64, 0.0, 0.0, 0.0],
 						[0.0, 2.0 / self.height as f64, 0.0, 0.0],
-						[0.0, 0.0, 1.0, 0.0],
+						[-1.0, -1.0, -1.0, 0.0],
 						[-1.0, -1.0, 0.0, 1.0],
 					])
 					.into(),
 					viewport: rect,
-					modes: GizmoMode::TranslateX
-						| GizmoMode::TranslateY
-						| GizmoMode::TranslateXY
-						| GizmoMode::RotateZ,
+					modes: GizmoMode::TranslateX | GizmoMode::TranslateY | GizmoMode::RotateZ,
 					snapping: true,
 					snap_distance: 5.0,
 					..Default::default()
@@ -716,8 +713,8 @@ impl AetSceneNode {
 						scale,
 						glam::DQuat::from_euler(
 							glam::EulerRot::XYZ,
-							rotation[0],
-							rotation[1],
+							-rotation[0],
+							-rotation[1],
 							rotation[2],
 						),
 						translation,
