@@ -81,7 +81,6 @@ impl TreeNode for SpriteSetNode {
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {
@@ -159,11 +158,11 @@ impl TreeNode for SpriteSetNode {
 
 impl SpriteSetNode {
 	pub fn name_pattern() -> Regex {
-		Regex::new(r"^spr_.*\.bin$").unwrap()
+		Regex::new(r"(^spr_.*\.bin)|(\.spr)$").unwrap()
 	}
 
 	pub fn read(name: &str, data: &[u8]) -> Self {
-		let set = spr::Set::from_buf(data, false);
+		let set = spr::Set::from_buf(data, name.ends_with("spr"));
 		let textures_node = TextureSetNode::from_sprset(&set);
 		let texture_names = Rc::new(Mutex::new(
 			textures_node
@@ -905,7 +904,6 @@ impl TreeNode for SpriteInfoNode {
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {

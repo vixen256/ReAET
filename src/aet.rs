@@ -154,7 +154,6 @@ impl TreeNode for AetSetNode {
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {
@@ -239,11 +238,11 @@ impl TreeNode for AetSetNode {
 
 impl AetSetNode {
 	pub fn name_pattern() -> Regex {
-		Regex::new(r"^aet_.*\.bin$").unwrap()
+		Regex::new(r"(^aet_.*\.bin)|(.aet)$").unwrap()
 	}
 
 	pub fn read(name: &str, data: &[u8]) -> Self {
-		let set = aet::Set::from_buf(data, false);
+		let set = aet::Set::from_buf(data, name.ends_with("aet"));
 
 		let scenes = set
 			.scenes
@@ -451,7 +450,6 @@ impl TreeNode for AetSceneNode {
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {
@@ -470,7 +468,7 @@ impl TreeNode for AetSceneNode {
 					});
 					row.col(|ui| {
 						egui::DragValue::new(&mut self.width)
-							.max_decimals(2)
+							.max_decimals(0)
 							.speed(0.0)
 							.update_while_editing(true)
 							.ui(ui);
@@ -483,7 +481,7 @@ impl TreeNode for AetSceneNode {
 					});
 					row.col(|ui| {
 						egui::DragValue::new(&mut self.height)
-							.max_decimals(2)
+							.max_decimals(0)
 							.speed(0.0)
 							.update_while_editing(true)
 							.ui(ui);
@@ -1480,7 +1478,6 @@ impl TreeNode for AetLayerNode {
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {
@@ -1499,7 +1496,7 @@ impl TreeNode for AetLayerNode {
 					});
 					row.col(|ui| {
 						egui::DragValue::new(&mut self.start_time)
-							.max_decimals(0)
+							.max_decimals(2)
 							.speed(0.0)
 							.update_while_editing(true)
 							.ui(ui);
@@ -1512,7 +1509,7 @@ impl TreeNode for AetLayerNode {
 					});
 					row.col(|ui| {
 						egui::DragValue::new(&mut self.end_time)
-							.max_decimals(0)
+							.max_decimals(2)
 							.speed(0.0)
 							.update_while_editing(true)
 							.ui(ui);

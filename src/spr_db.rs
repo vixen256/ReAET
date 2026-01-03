@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 pub struct SprDbNode {
+	pub filename: String,
 	pub modern: bool,
 	pub big_endian: bool,
 	pub is_x: bool,
@@ -63,7 +64,6 @@ impl TreeNode for SprDbNode {
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {
@@ -99,13 +99,14 @@ impl TreeNode for SprDbNode {
 
 impl SprDbNode {
 	pub fn name_pattern() -> Regex {
-		Regex::new(r"spr_db.bin$").unwrap()
+		Regex::new(r"(spr_db.bin)|(\.spi)$").unwrap()
 	}
 
-	pub fn read(data: &[u8], modern: bool) -> Self {
-		let spr_db = file::Database::from_buf(data, modern);
+	pub fn read(filename: &str, data: &[u8]) -> Self {
+		let spr_db = file::Database::from_buf(data, filename.ends_with("spi"));
 
 		Self {
+			filename: filename.to_string(),
 			modern: spr_db.modern(),
 			big_endian: spr_db.big_endian(),
 			is_x: spr_db.is_x(),
@@ -160,7 +161,6 @@ impl TreeNode for SprDbSetNode {
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {});
@@ -182,7 +182,6 @@ impl TreeNode for SprDbEntryNode {
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		let height = ui.text_style_height(&egui::TextStyle::Body);
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {});

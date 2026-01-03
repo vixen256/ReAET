@@ -1,6 +1,7 @@
 use crate::*;
 use eframe::egui;
 use eframe::egui::NumExt;
+use egui_material_icons::icons::*;
 use regex::Regex;
 use std::collections::*;
 use std::path::PathBuf;
@@ -173,8 +174,13 @@ impl App {
 		cc.egui_ctx.set_theme(egui::Theme::Light);
 
 		egui_material_icons::initialize(&cc.egui_ctx);
-		cc.egui_ctx
-			.style_mut(|style| style.spacing.scroll = egui::style::ScrollStyle::solid());
+		cc.egui_ctx.style_mut(|style| {
+			style.spacing.scroll = egui::style::ScrollStyle::solid();
+			style.spacing.slider_width *= 2.0;
+			style.visuals.striped = true;
+			style.visuals.slider_trailing_fill = true;
+			style.visuals.handle_shape = egui::style::HandleShape::Circle;
+		});
 
 		let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
 		txp::setup_wgpu(wgpu_render_state);
@@ -493,7 +499,7 @@ impl App {
 				}
 			}
 		} else if SPRDB.is_match(name) {
-			self.spr_db = Some(spr_db::SprDbNode::read(&data, false));
+			self.spr_db = Some(spr_db::SprDbNode::read(&name, &data));
 			self.spr_db_filepath = Some(path.clone());
 		}
 
@@ -507,10 +513,11 @@ impl App {
 					let Ok(file) = file else {
 						continue;
 					};
-					if SPRDB.is_match(&file.file_name().to_string_lossy().to_string())
+					let name = file.file_name().to_string_lossy().to_string();
+					if SPRDB.is_match(&name)
 						&& let Ok(data) = std::fs::read(file.path())
 					{
-						self.spr_db = Some(spr_db::SprDbNode::read(&data, false));
+						self.spr_db = Some(spr_db::SprDbNode::read(&name, &data));
 						self.spr_db_filepath = Some(file.path());
 						break;
 					}
@@ -705,7 +712,7 @@ impl eframe::App for App {
 			self.file_picker_result = None;
 		}
 
-		egui::TopBottomPanel::new(egui::panel::TopBottomSide::Top, "MenuBar").show(ctx, |ui| {
+		egui::TopBottomPanel::top("MenuBar").show(ctx, |ui| {
 			egui::MenuBar::new().ui(ui, |ui| {
 				ui.menu_button("File", |ui| {
 					if ui.button("Open").clicked() {
@@ -744,6 +751,16 @@ impl eframe::App for App {
 						.clicked()
 					{
 						self.save_files();
+					}
+
+					if ui.button("Close").clicked() {
+						self.aet_set = None;
+						self.aet_set_filepath = None;
+						self.sprite_set = None;
+						self.sprite_set_filepath = None;
+						self.spr_db = None;
+						self.spr_db_filepath = None;
+						self.selected = Vec::new();
 					}
 				});
 
@@ -880,54 +897,96 @@ impl eframe::App for App {
 				ui.take_available_space();
 			});
 
-		egui::SidePanel::left("LeftSidePanel")
-			.resizable(true)
-			.show(ctx, |ui| {
-				if let Some(scene) = self.get_active_scene() {
-					if ui.ctx().memory(|memory| memory.focused().is_none()) {
-						if ui.input_mut(|input| {
-							input.consume_key(egui::Modifiers::NONE, egui::Key::Space)
-						}) {
-							scene.playing = !scene.playing;
-						}
-
-						if ui.input_mut(|input| {
-							input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft)
-						}) {
-							scene.current_time -= 1.0;
-						}
-
-						if ui.input_mut(|input| {
-							input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight)
-						}) {
-							scene.current_time += 1.0;
-						}
-					}
-
-					ui.checkbox(&mut scene.playing, "Playing");
-					ui.checkbox(&mut scene.display_placeholders, "Display placeholders");
-					ui.checkbox(&mut scene.centered, "Centered");
-					ui.add(
-						egui::Slider::new(
-							&mut scene.current_time,
-							scene.start_time..=scene.end_time,
-						)
-						.text("Time"),
-					);
-
-					if scene.playing && scene.current_time < scene.end_time {
-						ctx.input(|input| {
-							scene.current_time += input.stable_dt * scene.fps;
-						});
-						ctx.request_repaint();
-					}
-				}
-				ui.take_available_space();
-			});
-
 		egui::TopBottomPanel::bottom("CurveEditor")
 			.resizable(true)
 			.show(ctx, |ui| {
+				if let Some(scene) = self.get_active_scene() {
+					ui.horizontal(|ui| {
+						if ui.ctx().memory(|memory| memory.focused().is_none()) {
+							if ui.input_mut(|input| {
+								input.consume_key(egui::Modifiers::NONE, egui::Key::Space)
+							}) {
+								scene.playing = !scene.playing;
+							}
+
+							if ui.input_mut(|input| {
+								input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft)
+							}) {
+								scene.current_time -= 1.0;
+							}
+
+							if ui.input_mut(|input| {
+								input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight)
+							}) {
+								scene.current_time += 1.0;
+							}
+						}
+
+						static WIDTH: OnceLock<f32> = OnceLock::new();
+						let w = WIDTH.get_or_init(|| {
+							ui.scope_builder(
+								egui::UiBuilder::new().sizing_pass().invisible(),
+								|ui| {
+									let start = ui.available_width();
+
+									_ = ui.selectable_label(false, ICON_PLAY_ARROW);
+									ui.checkbox(
+										&mut scene.display_placeholders,
+										"Display placeholders",
+									);
+									ui.checkbox(&mut scene.centered, "Centered");
+									ui.add(
+										egui::Slider::new(
+											&mut scene.current_time,
+											scene.start_time..=scene.end_time,
+										)
+										.clamping(egui::SliderClamping::Edits)
+										.max_decimals(0),
+									);
+
+									start - ui.available_width()
+								},
+							)
+							.inner
+						});
+
+						let offset = ui.available_width() / 2.0 - w / 2.0;
+
+						if offset > 0.0 {
+							ui.allocate_space(egui::vec2(offset, 0.0));
+						}
+
+						let playback_icon = if scene.playing {
+							ICON_PAUSE
+						} else {
+							ICON_PLAY_ARROW
+						};
+						if ui.selectable_label(false, playback_icon).clicked() {
+							scene.playing = !scene.playing;
+						}
+
+						ui.checkbox(&mut scene.display_placeholders, "Display placeholders");
+						ui.checkbox(&mut scene.centered, "Centered");
+						ui.add(
+							egui::Slider::new(
+								&mut scene.current_time,
+								scene.start_time..=scene.end_time,
+							)
+							.clamping(egui::SliderClamping::Edits)
+							.max_decimals(0),
+						);
+
+						if scene.playing && scene.current_time < scene.end_time {
+							ctx.input(|input| {
+								scene.current_time += input.stable_dt * scene.fps;
+							});
+							ctx.request_repaint();
+						}
+					});
+
+					ui.separator();
+				}
+
 				if let Some(node) = &mut self.aet_set
 					&& self.selected.len() >= 2
 					&& self.selected[0] == 0

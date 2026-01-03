@@ -54,7 +54,6 @@ impl TreeNode for TextureSetNode {
 		if self.filename.is_some() {
 			let height = ui.text_style_height(&egui::TextStyle::Body);
 			egui_extras::TableBuilder::new(ui)
-				.striped(true)
 				.column(egui_extras::Column::remainder())
 				.column(egui_extras::Column::remainder())
 				.body(|mut body| {
@@ -459,7 +458,6 @@ impl TreeNode for TextureNode {
 		let mip = self.texture.get_mipmap(0, 0).unwrap();
 		let mut replacement_texture = None;
 		egui_extras::TableBuilder::new(ui)
-			.striped(true)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
 			.body(|mut body| {
