@@ -467,11 +467,7 @@ impl TreeNode for AetSceneNode {
 						ui.label("Start time");
 					});
 					row.col(|ui| {
-						egui::DragValue::new(&mut self.start_time)
-							.max_decimals(2)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
+						crate::app::num_edit(ui, &mut self.start_time, 2);
 					});
 				});
 
@@ -480,11 +476,7 @@ impl TreeNode for AetSceneNode {
 						ui.label("End time");
 					});
 					row.col(|ui| {
-						egui::DragValue::new(&mut self.end_time)
-							.max_decimals(2)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
+						crate::app::num_edit(ui, &mut self.end_time, 2);
 					});
 				});
 
@@ -493,11 +485,7 @@ impl TreeNode for AetSceneNode {
 						ui.label("FPS");
 					});
 					row.col(|ui| {
-						egui::DragValue::new(&mut self.fps)
-							.max_decimals(0)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
+						crate::app::num_edit(ui, &mut self.fps, 0);
 					});
 				});
 
@@ -506,11 +494,7 @@ impl TreeNode for AetSceneNode {
 						ui.label("Width");
 					});
 					row.col(|ui| {
-						egui::DragValue::new(&mut self.width)
-							.max_decimals(0)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
+						crate::app::num_edit(ui, &mut self.width, 0);
 					});
 				});
 
@@ -519,11 +503,7 @@ impl TreeNode for AetSceneNode {
 						ui.label("Height");
 					});
 					row.col(|ui| {
-						egui::DragValue::new(&mut self.height)
-							.max_decimals(0)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
+						crate::app::num_edit(ui, &mut self.height, 0);
 					});
 				});
 			});
@@ -1534,11 +1514,7 @@ impl TreeNode for AetLayerNode {
 						ui.label("Start time");
 					});
 					row.col(|ui| {
-						egui::DragValue::new(&mut self.start_time)
-							.max_decimals(2)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
+						crate::app::num_edit(ui, &mut self.start_time, 2);
 					});
 				});
 
@@ -1547,11 +1523,7 @@ impl TreeNode for AetLayerNode {
 						ui.label("End time");
 					});
 					row.col(|ui| {
-						egui::DragValue::new(&mut self.end_time)
-							.max_decimals(2)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
+						crate::app::num_edit(ui, &mut self.end_time, 2);
 					});
 				});
 
@@ -1769,11 +1741,7 @@ impl TreeNode for AetLayerNode {
 								ui.label("Width");
 							});
 							row.col(|ui| {
-								egui::DragValue::new(&mut video.width)
-									.max_decimals(0)
-									.speed(0.0)
-									.update_while_editing(true)
-									.ui(ui);
+								crate::app::num_edit(ui, &mut video.width, 0);
 							});
 						});
 
@@ -1782,11 +1750,7 @@ impl TreeNode for AetLayerNode {
 								ui.label("Height");
 							});
 							row.col(|ui| {
-								egui::DragValue::new(&mut video.height)
-									.max_decimals(0)
-									.speed(0.0)
-									.update_while_editing(true)
-									.ui(ui);
+								crate::app::num_edit(ui, &mut video.height, 0);
 							});
 						});
 
@@ -1795,11 +1759,7 @@ impl TreeNode for AetLayerNode {
 								ui.label("FPF");
 							});
 							row.col(|ui| {
-								egui::DragValue::new(&mut video.fpf)
-									.max_decimals(0)
-									.speed(0.0)
-									.update_while_editing(true)
-									.ui(ui);
+								crate::app::num_edit(ui, &mut video.fpf, 0);
 							});
 						});
 
@@ -1903,11 +1863,7 @@ impl TreeNode for AetLayerNode {
 								ui.label("Sound index");
 							});
 							row.col(|ui| {
-								egui::DragValue::new(&mut audio.sound_index)
-									.max_decimals(0)
-									.speed(0.0)
-									.update_while_editing(true)
-									.ui(ui);
+								crate::app::num_edit(ui, &mut audio.sound_index, 0);
 							});
 						});
 					}
@@ -1931,11 +1887,7 @@ impl TreeNode for AetLayerNode {
 							ui.text_edit_singleline(name);
 						});
 						row.col(|ui| {
-							egui::DragValue::new(value)
-								.max_decimals(2)
-								.speed(0.0)
-								.update_while_editing(true)
-								.ui(ui);
+							crate::app::num_edit(ui, value, 2);
 						});
 					});
 				}
@@ -2299,11 +2251,7 @@ impl AetLayerNode {
 
 				ui.horizontal(|ui| {
 					ui.label("Frame");
-					if egui::DragValue::new(&mut curve.keys[self.selected_key].frame)
-						.max_decimals(2)
-						.speed(0.0)
-						.update_while_editing(true)
-						.ui(ui)
+					if crate::app::num_edit(ui, &mut curve.keys[self.selected_key].frame, 2)
 						.changed()
 					{
 						curve.keys[self.selected_key].frame = curve.keys[self.selected_key]
@@ -2316,20 +2264,12 @@ impl AetLayerNode {
 
 				ui.horizontal(|ui| {
 					ui.label("Value");
-					egui::DragValue::new(&mut curve.keys[self.selected_key].value)
-						.max_decimals(2)
-						.speed(0.0)
-						.update_while_editing(true)
-						.ui(ui);
+					crate::app::num_edit(ui, &mut curve.keys[self.selected_key].value, 2);
 				});
 
 				ui.horizontal(|ui| {
 					ui.label("Tangent");
-					egui::DragValue::new(&mut curve.keys[self.selected_key].tangent)
-						.max_decimals(2)
-						.speed(0.0)
-						.update_while_editing(true)
-						.ui(ui);
+					crate::app::num_edit(ui, &mut curve.keys[self.selected_key].tangent, 2);
 				});
 
 				ui.take_available_space();

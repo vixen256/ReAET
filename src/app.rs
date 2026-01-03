@@ -307,6 +307,95 @@ pub fn collapsing_selectable_label<R>(
 	.inner
 }
 
+// Based on DragValue
+pub fn num_edit<Num: egui::emath::Numeric + std::str::FromStr + std::fmt::Display>(
+	ui: &mut egui::Ui,
+	value: &mut Num,
+	max_decimals: usize,
+) -> egui::Response {
+	let id = ui.next_auto_id();
+	let is_editing = ui.is_enabled()
+		&& ui.memory_mut(|mem| {
+			mem.interested_in_focus(id, ui.layer_id());
+			mem.has_focus(id)
+		});
+
+	if ui.memory_mut(|mem| !mem.had_focus_last_frame(id) && mem.has_focus(id)) {
+		ui.data_mut(|data| data.remove::<String>(id));
+	}
+
+	if ui.memory(|mem| !mem.has_focus(id) && mem.had_focus_last_frame(id))
+		&& !ui.input(|i| i.key_pressed(egui::Key::Escape))
+	{
+		ui.data_mut(|data| data.remove::<String>(id));
+	}
+
+	let value_text = format!("{:.*}", max_decimals, *value);
+	let response = if is_editing {
+		let mut value_text = ui
+			.data_mut(|data| data.remove_temp::<String>(id))
+			.unwrap_or_else(|| value_text);
+		let response = ui.add(
+			egui::TextEdit::singleline(&mut value_text)
+				.clip_text(false)
+				.horizontal_align(ui.layout().horizontal_align())
+				.vertical_align(ui.layout().vertical_align())
+				.margin(ui.spacing().button_padding)
+				.min_size(ui.spacing().interact_size)
+				.id(id)
+				.desired_width(ui.spacing().interact_size.x - 2.0 * ui.spacing().button_padding.x)
+				.font(ui.style().drag_value_text_style.clone()),
+		);
+
+		if ui.memory_mut(|mem| !mem.had_focus_last_frame(id) && mem.has_focus(id)) {
+			let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+			state
+				.cursor
+				.set_char_range(Some(egui::text::CCursorRange::two(
+					egui::text::CCursor::default(),
+					egui::text::CCursor::new(value_text.chars().count()),
+				)));
+			state.store(ui.ctx(), response.id);
+		}
+
+		if response.changed() {
+			if let Ok(parsed_value) = value_text.parse() {
+				*value = parsed_value;
+			}
+		}
+		ui.data_mut(|data| data.insert_temp(id, value_text));
+
+		response
+	} else {
+		let button = egui::Button::new(
+			egui::RichText::new(&value_text).text_style(ui.style().drag_value_text_style.clone()),
+		)
+		.wrap_mode(egui::TextWrapMode::Extend)
+		.sense(egui::Sense::click())
+		.min_size(ui.spacing().interact_size); // TODO(emilk): find some more generic solution to `min_size`
+
+		let response = ui.add(button);
+
+		if response.clicked() {
+			ui.data_mut(|data| data.remove::<String>(id));
+			ui.memory_mut(|mem| mem.request_focus(id));
+
+			let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+			state
+				.cursor
+				.set_char_range(Some(egui::text::CCursorRange::two(
+					egui::text::CCursor::default(),
+					egui::text::CCursor::new(value_text.chars().count()),
+				)));
+			state.store(ui.ctx(), response.id);
+		}
+
+		response
+	};
+
+	response
+}
+
 pub fn show_node(
 	ui: &mut egui::Ui,
 	node: &mut dyn TreeNode,

@@ -188,11 +188,7 @@ impl TreeNode for SprDbSetNode {
 					});
 					row.col(|ui| {
 						ui.horizontal(|ui| {
-							egui::DragValue::new(&mut self.id)
-								.max_decimals(0)
-								.speed(0.0)
-								.update_while_editing(true)
-								.ui(ui);
+							crate::app::num_edit(ui, &mut self.id, 0);
 
 							if ui.button("Murmur").clicked() {
 								self.id =
@@ -238,11 +234,7 @@ impl TreeNode for SprDbEntryNode {
 					});
 					row.col(|ui| {
 						ui.horizontal(|ui| {
-							egui::DragValue::new(&mut self.id)
-								.max_decimals(0)
-								.speed(0.0)
-								.update_while_editing(true)
-								.ui(ui);
+							crate::app::num_edit(ui, &mut self.id, 0);
 
 							if ui.button("Murmur").clicked() {
 								self.id =
@@ -257,11 +249,7 @@ impl TreeNode for SprDbEntryNode {
 						ui.label("Index");
 					});
 					row.col(|ui| {
-						egui::DragValue::new(&mut self.index)
-							.max_decimals(0)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
+						crate::app::num_edit(ui, &mut self.index, 0);
 					});
 				});
 

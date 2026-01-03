@@ -72,10 +72,7 @@ impl TreeNode for TextureSetNode {
 								ui.label("Signature");
 							});
 							row.col(|ui| {
-								egui::DragValue::new(&mut self.signature)
-									.hexadecimal(8, false, true)
-									.speed(0.0)
-									.ui(ui);
+								crate::app::num_edit(ui, &mut self.signature, 0);
 							});
 						});
 					}
@@ -682,11 +679,7 @@ impl TreeNode for TextureNode {
 						});
 						row.col(|ui| {
 							ui.horizontal(|ui| {
-								egui::DragValue::new(&mut db_entry.id)
-									.max_decimals(0)
-									.speed(0.0)
-									.update_while_editing(true)
-									.ui(ui);
+								crate::app::num_edit(ui, &mut db_entry.id, 0);
 
 								if ui.button("Murmur").clicked() {
 									db_entry.id = kkdlib::hash::murmurhash(

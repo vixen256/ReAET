@@ -128,11 +128,7 @@ impl TreeNode for SpriteSetNode {
 						});
 						row.col(|ui| {
 							ui.horizontal(|ui| {
-								egui::DragValue::new(&mut db_set.id)
-									.max_decimals(0)
-									.speed(0.0)
-									.update_while_editing(true)
-									.ui(ui);
+								crate::app::num_edit(ui, &mut db_set.id, 0);
 
 								if ui.button("Murmur").clicked() {
 									db_set.id = kkdlib::hash::murmurhash(
@@ -946,12 +942,9 @@ impl TreeNode for SpriteInfoNode {
 					});
 					row.col(|ui| {
 						let mut px = self.info.px();
-						egui::DragValue::new(&mut px)
-							.max_decimals(0)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
-						self.info.set_px(px);
+						if crate::app::num_edit(ui, &mut px, 0).changed() {
+							self.info.set_px(px);
+						}
 					});
 				});
 
@@ -961,12 +954,9 @@ impl TreeNode for SpriteInfoNode {
 					});
 					row.col(|ui| {
 						let mut py = self.info.py();
-						egui::DragValue::new(&mut py)
-							.max_decimals(0)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
-						self.info.set_py(py);
+						if crate::app::num_edit(ui, &mut py, 0).changed() {
+							self.info.set_py(py);
+						}
 					});
 				});
 
@@ -976,12 +966,9 @@ impl TreeNode for SpriteInfoNode {
 					});
 					row.col(|ui| {
 						let mut width = self.info.width();
-						egui::DragValue::new(&mut width)
-							.max_decimals(0)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
-						self.info.set_width(width);
+						if crate::app::num_edit(ui, &mut width, 0).changed() {
+							self.info.set_width(width);
+						}
 					});
 				});
 
@@ -991,12 +978,9 @@ impl TreeNode for SpriteInfoNode {
 					});
 					row.col(|ui| {
 						let mut height = self.info.height();
-						egui::DragValue::new(&mut height)
-							.max_decimals(0)
-							.speed(0.0)
-							.update_while_editing(true)
-							.ui(ui);
-						self.info.set_height(height);
+						if crate::app::num_edit(ui, &mut height, 0).changed() {
+							self.info.set_height(height);
+						}
 					});
 				});
 
@@ -1032,11 +1016,7 @@ impl TreeNode for SpriteInfoNode {
 						});
 						row.col(|ui| {
 							ui.horizontal(|ui| {
-								egui::DragValue::new(&mut db_entry.id)
-									.max_decimals(0)
-									.speed(0.0)
-									.update_while_editing(true)
-									.ui(ui);
+								crate::app::num_edit(ui, &mut db_entry.id, 0);
 
 								if ui.button("Murmur").clicked() {
 									db_entry.id = kkdlib::hash::murmurhash(
