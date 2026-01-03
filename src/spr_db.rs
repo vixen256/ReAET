@@ -16,7 +16,7 @@ pub struct SprDbNode {
 
 impl TreeNode for SprDbNode {
 	fn label(&self) -> &str {
-		"Sprite database"
+		&self.filename
 	}
 
 	fn has_children(&self) -> bool {
@@ -163,7 +163,45 @@ impl TreeNode for SprDbSetNode {
 		egui_extras::TableBuilder::new(ui)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
-			.body(|mut body| {});
+			.body(|mut body| {
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("Name");
+					});
+					row.col(|ui| {
+						ui.text_edit_singleline(&mut self.name);
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("File");
+					});
+					row.col(|ui| {
+						ui.text_edit_singleline(&mut self.file_name);
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("ID");
+					});
+					row.col(|ui| {
+						ui.horizontal(|ui| {
+							egui::DragValue::new(&mut self.id)
+								.max_decimals(0)
+								.speed(0.0)
+								.update_while_editing(true)
+								.ui(ui);
+
+							if ui.button("Murmur").clicked() {
+								self.id =
+									kkdlib::hash::murmurhash(self.name.bytes().collect::<Vec<_>>());
+							}
+						});
+					});
+				});
+			});
 	}
 }
 
@@ -184,6 +222,57 @@ impl TreeNode for SprDbEntryNode {
 		egui_extras::TableBuilder::new(ui)
 			.column(egui_extras::Column::remainder())
 			.column(egui_extras::Column::remainder())
-			.body(|mut body| {});
+			.body(|mut body| {
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("Name");
+					});
+					row.col(|ui| {
+						ui.text_edit_singleline(&mut self.name);
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("ID");
+					});
+					row.col(|ui| {
+						ui.horizontal(|ui| {
+							egui::DragValue::new(&mut self.id)
+								.max_decimals(0)
+								.speed(0.0)
+								.update_while_editing(true)
+								.ui(ui);
+
+							if ui.button("Murmur").clicked() {
+								self.id =
+									kkdlib::hash::murmurhash(self.name.bytes().collect::<Vec<_>>());
+							}
+						});
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("Index");
+					});
+					row.col(|ui| {
+						egui::DragValue::new(&mut self.index)
+							.max_decimals(0)
+							.speed(0.0)
+							.update_while_editing(true)
+							.ui(ui);
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("Texture");
+					});
+					row.col(|ui| {
+						egui::Checkbox::without_text(&mut self.texture).ui(ui);
+					});
+				});
+			});
 	}
 }

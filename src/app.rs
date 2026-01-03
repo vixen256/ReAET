@@ -620,9 +620,19 @@ impl App {
 	}
 }
 
+const OPEN_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND,
+	logical_key: egui::Key::O,
+};
+
 const SAVE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 	modifiers: egui::Modifiers::COMMAND,
 	logical_key: egui::Key::S,
+};
+
+const CLOSE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND,
+	logical_key: egui::Key::W,
 };
 
 const UNDO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
@@ -642,8 +652,45 @@ impl eframe::App for App {
 				}
 			}
 
+			if input.consume_shortcut(&OPEN_SHORTCUT) {
+				let (tx, rx) = mpsc::channel();
+				std::thread::spawn(move || {
+					tokio::runtime::Builder::new_current_thread()
+						.enable_io()
+						.build()
+						.unwrap()
+						.block_on(async {
+							let Some(file) = rfd::AsyncFileDialog::new()
+								.add_filter("DIVA", &["farc", "bin"])
+								.pick_file()
+								.await
+							else {
+								tx.send(None).unwrap();
+								return;
+							};
+
+							let path = file.path();
+							let data = file.read().await;
+							tx.send(Some((path.to_path_buf(), data))).unwrap();
+						});
+				});
+
+				self.file_picker_result = Some(rx);
+				self.selected = Vec::new();
+			}
+
 			if input.consume_shortcut(&SAVE_SHORTCUT) {
 				self.save_files();
+			}
+
+			if input.consume_shortcut(&CLOSE_SHORTCUT) {
+				self.aet_set = None;
+				self.aet_set_filepath = None;
+				self.sprite_set = None;
+				self.sprite_set_filepath = None;
+				self.spr_db = None;
+				self.spr_db_filepath = None;
+				self.selected = Vec::new();
 			}
 
 			if let Some(aet_set) = &mut self.aet_set {
@@ -715,7 +762,13 @@ impl eframe::App for App {
 		egui::TopBottomPanel::top("MenuBar").show(ctx, |ui| {
 			egui::MenuBar::new().ui(ui, |ui| {
 				ui.menu_button("File", |ui| {
-					if ui.button("Open").clicked() {
+					if ui
+						.add(
+							egui::Button::new("Open")
+								.shortcut_text(ctx.format_shortcut(&OPEN_SHORTCUT)),
+						)
+						.clicked()
+					{
 						let (tx, rx) = mpsc::channel();
 						std::thread::spawn(move || {
 							tokio::runtime::Builder::new_current_thread()
@@ -753,7 +806,13 @@ impl eframe::App for App {
 						self.save_files();
 					}
 
-					if ui.button("Close").clicked() {
+					if ui
+						.add(
+							egui::Button::new("Close")
+								.shortcut_text(ctx.format_shortcut(&CLOSE_SHORTCUT)),
+						)
+						.clicked()
+					{
 						self.aet_set = None;
 						self.aet_set_filepath = None;
 						self.sprite_set = None;

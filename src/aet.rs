@@ -464,6 +464,45 @@ impl TreeNode for AetSceneNode {
 
 				body.row(height, |mut row| {
 					row.col(|ui| {
+						ui.label("Start time");
+					});
+					row.col(|ui| {
+						egui::DragValue::new(&mut self.start_time)
+							.max_decimals(2)
+							.speed(0.0)
+							.update_while_editing(true)
+							.ui(ui);
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("End time");
+					});
+					row.col(|ui| {
+						egui::DragValue::new(&mut self.end_time)
+							.max_decimals(2)
+							.speed(0.0)
+							.update_while_editing(true)
+							.ui(ui);
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("FPS");
+					});
+					row.col(|ui| {
+						egui::DragValue::new(&mut self.fps)
+							.max_decimals(0)
+							.speed(0.0)
+							.update_while_editing(true)
+							.ui(ui);
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
 						ui.label("Width");
 					});
 					row.col(|ui| {
