@@ -540,6 +540,8 @@ impl AetSceneNode {
 			1.0,
 			self.display_placeholders,
 			&mut videos,
+			&[selected[0], selected[1]],
+			selected,
 		);
 
 		let w = rect.max.x - rect.min.x;
@@ -1023,8 +1025,10 @@ impl AetCompNode {
 		opacity: f32,
 		display_placeholders: bool,
 		videos: &mut WgpuAetVideos,
+		path: &[usize],
+		selected: &[usize],
 	) {
-		for layer in self.layers.iter().rev() {
+		for (i, layer) in self.layers.iter().enumerate().rev() {
 			let layer = layer.try_lock().unwrap();
 			if frame < layer.start_time
 				|| frame >= layer.end_time
@@ -1033,6 +1037,9 @@ impl AetCompNode {
 			{
 				continue;
 			}
+
+			let mut path = path.to_vec();
+			path.push(i);
 
 			let mut m = mat;
 			let mut opacity = opacity;
@@ -1063,12 +1070,7 @@ impl AetCompNode {
 									video.color[2] as f32 / 255.0,
 									opacity,
 								],
-								blend_mode: layer
-									.video
-									.as_ref()
-									.map_or(aet::BlendMode::Normal, |video| {
-										video.transfer_mode.mode
-									}),
+								blend_mode: aet::BlendMode::Add,
 							});
 						}
 						continue;
@@ -1109,7 +1111,81 @@ impl AetCompNode {
 					opacity,
 					display_placeholders,
 					videos,
+					&path,
+					selected,
 				),
+			}
+
+			// Draw rectangle around selected elem
+			if path == selected {
+				let (width, height) = if let AetItemNode::Video(video) = &layer.item {
+					(video.width as f32, video.height as f32)
+				} else if let Some(video) = &layer.video {
+					(
+						video.anchor_x.interpolate(frame) * 2.0,
+						video.anchor_y.interpolate(frame) * 2.0,
+					)
+				} else {
+					return;
+				};
+
+				let mut top = m;
+				top.x = top.x * width;
+				top.y = top.y * 5.0;
+				videos.videos.push(WgpuAetVideo {
+					is_ycbcr: false,
+					is_empty: true,
+					texture_coords: [0.0, 0.0, 0.0, 0.0],
+					source_size: [1.0, 1.0],
+					texture_index: 0,
+					mat: top,
+					color: [1.0, 1.0, 1.0, 1.0],
+					blend_mode: aet::BlendMode::Add,
+				});
+
+				let mut bottom = m;
+				bottom.w = bottom.x + bottom.y * (height - 5.0) + bottom.z + bottom.w;
+				bottom.x = bottom.x * width;
+				bottom.y = bottom.y * 5.0;
+				videos.videos.push(WgpuAetVideo {
+					is_ycbcr: false,
+					is_empty: true,
+					texture_coords: [0.0, 0.0, 0.0, 0.0],
+					source_size: [1.0, 1.0],
+					texture_index: 0,
+					mat: bottom,
+					color: [1.0, 1.0, 1.0, 1.0],
+					blend_mode: aet::BlendMode::Add,
+				});
+
+				let mut left = m;
+				left.x = left.x * 5.0;
+				left.y = left.y * height;
+				videos.videos.push(WgpuAetVideo {
+					is_ycbcr: false,
+					is_empty: true,
+					texture_coords: [0.0, 0.0, 0.0, 0.0],
+					source_size: [1.0, 1.0],
+					texture_index: 0,
+					mat: left,
+					color: [1.0, 1.0, 1.0, 1.0],
+					blend_mode: aet::BlendMode::Add,
+				});
+
+				let mut right = m;
+				right.w = right.x * (width - 5.0) + right.y + right.z + right.w;
+				right.x = right.x * 5.0;
+				right.y = right.y * height;
+				videos.videos.push(WgpuAetVideo {
+					is_ycbcr: false,
+					is_empty: true,
+					texture_coords: [0.0, 0.0, 0.0, 0.0],
+					source_size: [1.0, 1.0],
+					texture_index: 0,
+					mat: right,
+					color: [1.0, 1.0, 1.0, 1.0],
+					blend_mode: aet::BlendMode::Add,
+				});
 			}
 		}
 	}

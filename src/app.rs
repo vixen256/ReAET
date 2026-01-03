@@ -350,7 +350,7 @@ pub fn num_edit<Num: egui::emath::Numeric + std::str::FromStr + std::fmt::Displa
 	}
 
 	let value_text = format!("{:.*}", max_decimals, *value);
-	let response = if is_editing {
+	if is_editing {
 		let mut value_text = ui
 			.data_mut(|data| data.remove_temp::<String>(id))
 			.unwrap_or_else(|| value_text);
@@ -391,7 +391,7 @@ pub fn num_edit<Num: egui::emath::Numeric + std::str::FromStr + std::fmt::Displa
 		)
 		.wrap_mode(egui::TextWrapMode::Extend)
 		.sense(egui::Sense::click())
-		.min_size(ui.spacing().interact_size); // TODO(emilk): find some more generic solution to `min_size`
+		.min_size(ui.spacing().interact_size);
 
 		let response = ui.add(button);
 
@@ -410,9 +410,7 @@ pub fn num_edit<Num: egui::emath::Numeric + std::str::FromStr + std::fmt::Displa
 		}
 
 		response
-	};
-
-	response
+	}
 }
 
 pub fn show_node(
