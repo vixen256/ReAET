@@ -770,6 +770,7 @@ impl App {
 
 								self.sprite_set = Some(spr_set);
 								self.sprite_set_filepath = Some(file.path());
+								self.sprite_set_farc = Some(farc);
 
 								break;
 							}
@@ -849,34 +850,71 @@ impl App {
 	}
 
 	// Native only
-	// TODO: Fix modern writing
 	fn save_files_to(&self) {
 		let aet_set = if let Some(aet_set) = &self.aet_set {
-			Some((aet_set.raw_data(), aet_set.name.clone()))
-		} else {
-			None
-		};
+			if let Some(farc) = &self.aet_set_farc
+				&& let Some(path) = &self.aet_set_filepath
+			{
+				let mut new_farc = kkdlib::farc::Farc::new();
+				new_farc.set_flags(farc.flags());
+				new_farc.set_signature(farc.signature());
+				new_farc.set_compression_level(farc.compression_level());
+				new_farc.set_alignment(farc.alignment());
+				new_farc.set_ft(farc.ft());
+				for file in farc.files() {
+					if file.name() != aet_set.name {
+						new_farc.add_file_data(&file.name(), file.data().unwrap_or_default());
+					}
+				}
 
-		let sprite_set = if let Some(sprite_set) = &self.sprite_set
-			&& let Some(path) = &self.sprite_set_filepath
-		{
-			let data = sprite_set.raw_data();
-			if path.extension() == Some(std::ffi::OsString::from("farc").as_os_str()) {
-				let mut farc = kkdlib::farc::Farc::new();
-				farc.add_file_data(&sprite_set.name, &data);
-				let data = farc.to_buf().unwrap_or_default();
-				Some((
-					data,
-					path.file_name().unwrap().to_string_lossy().to_string(),
-				))
+				new_farc.add_file_data(&aet_set.name, &aet_set.raw_data());
+				let name = path.file_name().unwrap().to_string_lossy().to_string();
+				Some((new_farc.to_buf().unwrap_or_default(), name))
 			} else {
-				Some((data, sprite_set.name.clone()))
+				Some((aet_set.raw_data(), aet_set.name.clone()))
 			}
 		} else {
 			None
 		};
 
-		let spr_db = if let Some(spr_db) = &self.spr_db {
+		let sprite_set = if let Some(sprite_set) = &self.sprite_set {
+			if let Some(farc) = &self.sprite_set_farc
+				&& let Some(path) = &self.sprite_set_filepath
+			{
+				let adding_spr_db = self.spr_db.as_ref().map_or(false, |spr_db| spr_db.modern);
+
+				let mut new_farc = kkdlib::farc::Farc::new();
+				new_farc.set_flags(farc.flags());
+				new_farc.set_signature(farc.signature());
+				new_farc.set_compression_level(farc.compression_level());
+				new_farc.set_alignment(farc.alignment());
+				new_farc.set_ft(farc.ft());
+				for file in farc.files() {
+					if file.name() != sprite_set.name
+						&& (!adding_spr_db
+							|| self.spr_db.as_ref().unwrap().filename != sprite_set.name)
+					{
+						new_farc.add_file_data(&file.name(), file.data().unwrap_or_default());
+					}
+				}
+
+				new_farc.add_file_data(&sprite_set.name, &sprite_set.raw_data());
+				if adding_spr_db && let Some(spr_db) = &self.spr_db {
+					new_farc.add_file_data(&spr_db.filename, &spr_db.raw_data());
+				}
+
+				let name = path.file_name().unwrap().to_string_lossy().to_string();
+				Some((new_farc.to_buf().unwrap_or_default(), name))
+			} else {
+				Some((sprite_set.raw_data(), sprite_set.name.clone()))
+			}
+		} else {
+			None
+		};
+
+		let spr_db = if let Some(spr_db) = &self.spr_db
+			&& (!spr_db.modern && sprite_set.is_some())
+		{
 			Some((spr_db.raw_data(), spr_db.filename.clone()))
 		} else {
 			None
