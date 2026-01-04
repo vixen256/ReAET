@@ -186,6 +186,8 @@ pub struct App {
 	selected: Vec<usize>,
 	file_picker_result: Option<mpsc::Receiver<Option<(std::path::PathBuf, Vec<u8>)>>>,
 
+	modern_writing_modal: bool,
+
 	undoer: LayerUndoer,
 }
 
@@ -217,6 +219,7 @@ impl App {
 			spr_db_filepath: None,
 			selected: Vec::new(),
 			file_picker_result: None,
+			modern_writing_modal: false,
 			undoer: LayerUndoer::new(),
 		})
 	}
@@ -570,13 +573,20 @@ impl App {
 			.unwrap_or_default();
 
 		if AETSET.is_match(name) {
-			self.aet_set = Some(aet::AetSetNode::read(&name, data));
+			let aet_set = aet::AetSetNode::read(&name, data);
+			if aet_set.modern {
+				self.modern_writing_modal = true;
+			}
+			self.aet_set = Some(aet_set);
 			self.aet_set_filepath = Some(path.clone());
 			self.spr_db = None;
 			self.sprite_set = None;
 			self.undoer = LayerUndoer::new();
 		} else if SPRSET.is_match(name) {
 			let spr_set = spr::SpriteSetNode::read(&name, data);
+			if spr_set.modern {
+				self.modern_writing_modal = true;
+			}
 			spr_set.init_wgpu(frame);
 
 			if let Some(aet_set) = &mut self.aet_set
@@ -597,6 +607,9 @@ impl App {
 				if SPRSET.is_match(&file.name()) {
 					let spr_set =
 						spr::SpriteSetNode::read(&file.name(), file.data().unwrap_or_default());
+					if spr_set.modern {
+						self.modern_writing_modal = true;
+					}
 					spr_set.init_wgpu(frame);
 
 					if let Some(aet_set) = &mut self.aet_set
@@ -611,10 +624,12 @@ impl App {
 					self.sprite_set_filepath = Some(path.clone());
 					spr_set_farc = true;
 				} else if AETSET.is_match(&file.name()) {
-					self.aet_set = Some(aet::AetSetNode::read(
-						&file.name(),
-						file.data().unwrap_or_default(),
-					));
+					let aet_set =
+						aet::AetSetNode::read(&file.name(), file.data().unwrap_or_default());
+					if aet_set.modern {
+						self.modern_writing_modal = true;
+					}
+					self.aet_set = Some(aet_set);
 					self.aet_set_filepath = Some(path.clone());
 					self.spr_db = None;
 					self.sprite_set = None;
@@ -696,6 +711,10 @@ impl App {
 							&spr_set.name(),
 							spr_set.data().unwrap_or_default(),
 						);
+
+						if spr_set.modern {
+							self.modern_writing_modal = true;
+						}
 
 						spr_set.init_wgpu(frame);
 						spr_set.add_db(spr_db.sets.first().unwrap().clone());
@@ -1190,6 +1209,23 @@ impl eframe::App for App {
 				}
 			}
 		});
+
+		if self.modern_writing_modal {
+			egui::Modal::new(egui::Id::new("ModernWritingModal")).show(ctx, |ui| {
+				ui.vertical_centered(|ui| {
+					ui.label(
+						egui::RichText::new(
+							"KKdLib currently does not support writing modern files",
+						)
+						.size(20.0)
+						.color(egui::Color32::RED),
+					);
+					if ui.button("Close").clicked() {
+						self.modern_writing_modal = false;
+					}
+				});
+			});
+		}
 
 		if let Some(aet_set) = &self.aet_set {
 			self.undoer
