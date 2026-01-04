@@ -177,8 +177,10 @@ impl LayerUndoer {
 pub struct App {
 	aet_set: Option<aet::AetSetNode>,
 	aet_set_filepath: Option<PathBuf>,
+	aet_set_farc: Option<kkdlib::farc::Farc>,
 	sprite_set: Option<spr::SpriteSetNode>,
 	sprite_set_filepath: Option<PathBuf>,
+	sprite_set_farc: Option<kkdlib::farc::Farc>,
 	spr_db: Option<spr_db::SprDbNode>,
 	spr_db_filepath: Option<PathBuf>,
 	selected: Vec<usize>,
@@ -207,8 +209,10 @@ impl App {
 		Some(Self {
 			aet_set: None,
 			aet_set_filepath: None,
+			aet_set_farc: None,
 			sprite_set: None,
 			sprite_set_filepath: None,
+			sprite_set_farc: None,
 			spr_db: None,
 			spr_db_filepath: None,
 			selected: Vec::new(),
@@ -587,9 +591,12 @@ impl App {
 			self.sprite_set_filepath = Some(path.clone());
 		} else if FARC.is_match(name) {
 			let farc = kkdlib::farc::Farc::from_buf(data, true);
+			let mut spr_set_farc = false;
+			let mut aet_set_farc = false;
 			for file in farc.files() {
 				if SPRSET.is_match(&file.name()) {
-					let spr_set = spr::SpriteSetNode::read(&file.name(), file.data().unwrap());
+					let spr_set =
+						spr::SpriteSetNode::read(&file.name(), file.data().unwrap_or_default());
 					spr_set.init_wgpu(frame);
 
 					if let Some(aet_set) = &mut self.aet_set
@@ -602,7 +609,30 @@ impl App {
 
 					self.sprite_set = Some(spr_set);
 					self.sprite_set_filepath = Some(path.clone());
+					spr_set_farc = true;
+				} else if AETSET.is_match(&file.name()) {
+					self.aet_set = Some(aet::AetSetNode::read(
+						&file.name(),
+						file.data().unwrap_or_default(),
+					));
+					self.aet_set_filepath = Some(path.clone());
+					self.spr_db = None;
+					self.sprite_set = None;
+					self.undoer = LayerUndoer::new();
+					aet_set_farc = true;
+				} else if SPRDB.is_match(&file.name()) {
+					self.spr_db = Some(spr_db::SprDbNode::read(
+						&file.name(),
+						file.data().unwrap_or_default(),
+					));
+					self.spr_db_filepath = Some(path.clone());
 				}
+			}
+
+			if spr_set_farc {
+				self.sprite_set_farc = Some(farc);
+			} else if aet_set_farc {
+				self.aet_set_farc = Some(farc);
 			}
 		} else if SPRDB.is_match(name) {
 			self.spr_db = Some(spr_db::SprDbNode::read(&name, &data));
@@ -631,6 +661,61 @@ impl App {
 			}
 
 			if let Some(aet_set) = &mut self.aet_set
+				&& self.spr_db.is_none()
+				&& self.sprite_set.is_none()
+			{
+				// spr db not in folder, modern?
+				let desired_name = aet_set
+					.name
+					.replace("aet_", "spr_")
+					.replace(".aec", ".farc");
+				for file in path.read_dir().unwrap() {
+					let Ok(file) = file else {
+						continue;
+					};
+					let name = file.file_name().to_string_lossy().to_string();
+					if name == desired_name
+						&& let Ok(data) = std::fs::read(file.path())
+					{
+						let farc = kkdlib::farc::Farc::from_buf(&data, true);
+						let Some(spr_db) = farc.get_file(&desired_name.replace(".farc", ".spi"))
+						else {
+							continue;
+						};
+
+						let Some(spr_set) = farc.get_file(&desired_name.replace(".farc", ".spr"))
+						else {
+							continue;
+						};
+
+						let spr_db = spr_db::SprDbNode::read(
+							&spr_db.name(),
+							spr_db.data().unwrap_or_default(),
+						);
+						let mut spr_set = spr::SpriteSetNode::read(
+							&spr_set.name(),
+							spr_set.data().unwrap_or_default(),
+						);
+
+						spr_set.init_wgpu(frame);
+						spr_set.add_db(spr_db.sets.first().unwrap().clone());
+
+						for scene in &mut aet_set.scenes {
+							scene.root.update_video_textures(&spr_db, &spr_set);
+						}
+
+						self.sprite_set = Some(spr_set);
+						self.sprite_set_filepath = Some(file.path());
+
+						self.spr_db = Some(spr_db);
+						self.spr_db_filepath = Some(file.path());
+
+						self.sprite_set_farc = Some(farc);
+
+						break;
+					}
+				}
+			} else if let Some(aet_set) = &mut self.aet_set
 				&& let Some(spr_db) = &self.spr_db
 				&& let Some(scene) = aet_set.scenes.first()
 				&& let Some(sprite_id) = scene.root.get_sprite_id()
@@ -700,26 +785,63 @@ impl App {
 		if let Some(aet_set) = &self.aet_set
 			&& let Some(path) = &self.aet_set_filepath
 		{
-			let data = aet_set.raw_data();
-			_ = std::fs::write(path, &data);
+			if let Some(farc) = &self.aet_set_farc {
+				let mut new_farc = kkdlib::farc::Farc::new();
+				new_farc.set_flags(farc.flags());
+				new_farc.set_signature(farc.signature());
+				new_farc.set_compression_level(farc.compression_level());
+				new_farc.set_alignment(farc.alignment());
+				new_farc.set_ft(farc.ft());
+				for file in farc.files() {
+					if file.name() != aet_set.name {
+						new_farc.add_file_data(&file.name(), file.data().unwrap_or_default());
+					}
+				}
+
+				new_farc.add_file_data(&aet_set.name, &aet_set.raw_data());
+				_ = std::fs::write(path, new_farc.to_buf().unwrap_or_default());
+			} else {
+				let data = aet_set.raw_data();
+				_ = std::fs::write(path, &data);
+			}
 		}
 
 		if let Some(sprite_set) = &self.sprite_set
 			&& let Some(path) = &self.sprite_set_filepath
 		{
-			let data = sprite_set.raw_data();
-			if path.extension() == Some(std::ffi::OsString::from("farc").as_os_str()) {
-				let mut farc = kkdlib::farc::Farc::new();
-				farc.add_file_data(&sprite_set.name, &data);
-				let data = farc.to_buf().unwrap_or_default();
-				_ = std::fs::write(path, &data);
+			if let Some(farc) = &self.sprite_set_farc {
+				let adding_spr_db = self.spr_db.as_ref().map_or(false, |spr_db| spr_db.modern);
+
+				let mut new_farc = kkdlib::farc::Farc::new();
+				new_farc.set_flags(farc.flags());
+				new_farc.set_signature(farc.signature());
+				new_farc.set_compression_level(farc.compression_level());
+				new_farc.set_alignment(farc.alignment());
+				new_farc.set_ft(farc.ft());
+				for file in farc.files() {
+					if file.name() != sprite_set.name
+						&& (!adding_spr_db
+							|| self.spr_db.as_ref().unwrap().filename != sprite_set.name)
+					{
+						new_farc.add_file_data(&file.name(), file.data().unwrap_or_default());
+					}
+				}
+
+				new_farc.add_file_data(&sprite_set.name, &sprite_set.raw_data());
+				if adding_spr_db && let Some(spr_db) = &self.spr_db {
+					new_farc.add_file_data(&spr_db.filename, &spr_db.raw_data());
+				}
+
+				_ = std::fs::write(path, new_farc.to_buf().unwrap_or_default());
 			} else {
+				let data = sprite_set.raw_data();
 				_ = std::fs::write(path, &data);
 			}
 		}
 
 		if let Some(spr_db) = &self.spr_db
 			&& let Some(path) = &self.spr_db_filepath
+			&& (!spr_db.modern && self.sprite_set_farc.is_some())
 		{
 			let data = spr_db.raw_data();
 			_ = std::fs::write(path, &data);
@@ -727,6 +849,7 @@ impl App {
 	}
 
 	// Native only
+	// TODO: Fix modern writing
 	fn save_files_to(&self) {
 		let aet_set = if let Some(aet_set) = &self.aet_set {
 			Some((aet_set.raw_data(), aet_set.name.clone()))

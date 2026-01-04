@@ -9,7 +9,7 @@ const YCbCrRgbMatrix = mat3x3 (
 );
 
 const CBCR_MULT = 256.0 / 255.0;
-const CBCR_SUB = 128.50196 / 255.0;
+const CBCR_SUB = 128.0 / 255.0 * CBCR_MULT;
 
 struct VertexInput {
 	@location(0) position: vec2<f32>,

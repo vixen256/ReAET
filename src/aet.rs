@@ -238,11 +238,11 @@ impl TreeNode for AetSetNode {
 
 impl AetSetNode {
 	pub fn name_pattern() -> Regex {
-		Regex::new(r"(^aet_.*\.bin)|(.aet)$").unwrap()
+		Regex::new(r"(^aet_.*\.bin)|(.aec)$").unwrap()
 	}
 
 	pub fn read(name: &str, data: &[u8]) -> Self {
-		let set = aet::Set::from_buf(data, name.ends_with("aet"));
+		let set = aet::Set::from_buf(data, name.ends_with("aec"));
 
 		let scenes = set
 			.scenes
@@ -1001,9 +1001,30 @@ impl AetCompNode {
 								break;
 							}
 						}
+
+						if index.is_none() {
+							for set in &spr_db.sets {
+								let set = set.try_lock().unwrap();
+								for entry in &set.entries {
+									let entry = entry.try_lock().unwrap();
+									if entry.name.strip_prefix("SPR_").unwrap_or(&entry.name)
+										!= source.name || entry.texture
+									{
+										continue;
+									}
+									index = Some(entry.index);
+									break;
+								}
+								if index.is_some() {
+									break;
+								}
+							}
+						}
+
 						let Some(index) = index else {
 							continue;
 						};
+
 						let sprs = spr_set.sprites_node.children.try_lock().unwrap();
 						let Some(sprite) = sprs.iter().skip(index as usize).next() else {
 							continue;
@@ -1042,11 +1063,13 @@ impl AetCompNode {
 			path.push(i);
 
 			let mut m = mat;
+			// Parent shouldnt affect opacity
+			let mut parent_opacity = 0.0;
 			let mut opacity = opacity;
 			if let Some(parent) = &layer.parent
 				&& let Some(video) = &parent.try_lock().unwrap().video
 			{
-				calc_mat(&mut m, &mut opacity, video, frame);
+				calc_mat(&mut m, &mut parent_opacity, video, frame);
 			}
 			if let Some(video) = &layer.video {
 				calc_mat(&mut m, &mut opacity, video, frame);
