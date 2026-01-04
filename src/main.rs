@@ -12,6 +12,7 @@ fn main() {
 		viewport: eframe::egui::ViewportBuilder::default()
 			.with_inner_size((1280.0, 720.0))
 			.with_drag_and_drop(true),
+		multisampling: 4,
 		renderer: eframe::Renderer::Wgpu,
 		wgpu_options: WgpuConfiguration {
 			wgpu_setup: WgpuSetup::CreateNew(WgpuSetupCreateNew {
