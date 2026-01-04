@@ -8,6 +8,7 @@ use eframe::egui_wgpu::wgpu::util::DeviceExt;
 use image::EncodableLayout;
 use kkdlib::{spr, txp};
 use regex::Regex;
+use std::collections::*;
 use std::rc::Rc;
 use std::sync::*;
 
@@ -743,10 +744,11 @@ impl TreeNode for TextureNode {
 			matrix: crate::aet::Mat4::default().into(),
 			tex_coords: [[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]],
 			color: [1.0, 1.0, 1.0, 1.0],
+			matte_tex_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
 			is_ycbcr: if self.texture.is_ycbcr() { 1 } else { 0 },
-			_padding_0: 0,
-			_padding_1: 0,
-			_padding_2: 0,
+			has_matte: 0,
+			matte_is_ycbcr: 0,
+			_padding: 0,
 		};
 
 		render_state.queue.write_buffer(
@@ -846,6 +848,10 @@ pub struct WgpuRenderTextures {
 	pub empty_texture: wgpu::BindGroup,
 }
 
+pub struct WgpuMatteTextures {
+	pub matte_bind_groups: BTreeMap<(usize, usize), wgpu::BindGroup>,
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -859,10 +865,11 @@ pub struct SpriteInfo {
 	pub matrix: [[f32; 4]; 4],
 	pub tex_coords: [[f32; 2]; 4],
 	pub color: [f32; 4],
+	pub matte_tex_coords: [[f32; 2]; 4],
 	pub is_ycbcr: u32,
-	pub _padding_0: u32,
-	pub _padding_1: u32,
-	pub _padding_2: u32,
+	pub has_matte: u32,
+	pub matte_is_ycbcr: u32,
+	pub _padding: u32,
 }
 
 pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
@@ -883,6 +890,16 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 				},
 				wgpu::BindGroupLayoutEntry {
 					binding: 1,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Texture {
+						multisampled: false,
+						view_dimension: wgpu::TextureViewDimension::D2,
+						sample_type: wgpu::TextureSampleType::Float { filterable: true },
+					},
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry {
+					binding: 2,
 					visibility: wgpu::ShaderStages::FRAGMENT,
 					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
 					count: None,
@@ -1081,10 +1098,11 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			matrix: crate::aet::Mat4::default().into(),
 			tex_coords: [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
 			color: [1.0, 1.0, 1.0, 1.0],
+			matte_tex_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [1.0, 0.0]],
 			is_ycbcr: 0,
-			_padding_0: 0,
-			_padding_1: 0,
-			_padding_2: 0,
+			has_matte: 0,
+			matte_is_ycbcr: 0,
+			_padding: 0,
 		}]),
 		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
 	});

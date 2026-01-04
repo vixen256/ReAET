@@ -8,6 +8,7 @@ use eframe::egui_wgpu::wgpu;
 use image::{EncodableLayout, GenericImage};
 use kkdlib::spr;
 use regex::Regex;
+use std::collections::*;
 use std::rc::Rc;
 use std::sync::*;
 
@@ -289,6 +290,43 @@ impl SpriteSetNode {
 			bytemuck::cast_slice(&verticies),
 		);
 
+		let empty_texture = device.create_texture(&wgpu::TextureDescriptor {
+			size: wgpu::Extent3d {
+				width: 1,
+				height: 1,
+				depth_or_array_layers: 1,
+			},
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: wgpu::TextureDimension::D2,
+			format: wgpu::TextureFormat::Rgba8Unorm,
+			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+			label: None,
+			view_formats: &[],
+		});
+
+		render_state.queue.write_texture(
+			wgpu::TexelCopyTextureInfo {
+				texture: &empty_texture,
+				mip_level: 0,
+				origin: wgpu::Origin3d::ZERO,
+				aspect: wgpu::TextureAspect::All,
+			},
+			&[0xFF, 0xFF, 0xFF, 0xFF],
+			wgpu::TexelCopyBufferLayout {
+				offset: 0,
+				bytes_per_row: Some(4),
+				rows_per_image: Some(1),
+			},
+			wgpu::Extent3d {
+				width: 1,
+				height: 1,
+				depth_or_array_layers: 1,
+			},
+		);
+
+		let empty_view = empty_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
 		for texture in &self.textures_node.children {
 			let tex = texture.try_lock().unwrap();
 
@@ -443,6 +481,10 @@ impl SpriteSetNode {
 					},
 					wgpu::BindGroupEntry {
 						binding: 1,
+						resource: wgpu::BindingResource::TextureView(&empty_view),
+					},
+					wgpu::BindGroupEntry {
+						binding: 2,
 						resource: wgpu::BindingResource::Sampler(&resources.sampler),
 					},
 				],
@@ -452,52 +494,19 @@ impl SpriteSetNode {
 			textures.push((texture, bind_group));
 		}
 
-		let empty_texture = device.create_texture(&wgpu::TextureDescriptor {
-			size: wgpu::Extent3d {
-				width: 1,
-				height: 1,
-				depth_or_array_layers: 1,
-			},
-			mip_level_count: 1,
-			sample_count: 1,
-			dimension: wgpu::TextureDimension::D2,
-			format: wgpu::TextureFormat::Rgba8Unorm,
-			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-			label: None,
-			view_formats: &[],
-		});
-
-		render_state.queue.write_texture(
-			wgpu::TexelCopyTextureInfo {
-				texture: &empty_texture,
-				mip_level: 0,
-				origin: wgpu::Origin3d::ZERO,
-				aspect: wgpu::TextureAspect::All,
-			},
-			&[0xFF, 0xFF, 0xFF, 0xFF],
-			wgpu::TexelCopyBufferLayout {
-				offset: 0,
-				bytes_per_row: Some(4),
-				rows_per_image: Some(1),
-			},
-			wgpu::Extent3d {
-				width: 1,
-				height: 1,
-				depth_or_array_layers: 1,
-			},
-		);
-
 		let empty_texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
 			layout: &resources.fragment_bind_group_layout,
 			entries: &[
 				wgpu::BindGroupEntry {
 					binding: 0,
-					resource: wgpu::BindingResource::TextureView(
-						&empty_texture.create_view(&wgpu::TextureViewDescriptor::default()),
-					),
+					resource: wgpu::BindingResource::TextureView(&empty_view),
 				},
 				wgpu::BindGroupEntry {
 					binding: 1,
+					resource: wgpu::BindingResource::TextureView(&empty_view),
+				},
+				wgpu::BindGroupEntry {
+					binding: 2,
 					resource: wgpu::BindingResource::Sampler(&resources.sampler),
 				},
 			],
@@ -513,6 +522,14 @@ impl SpriteSetNode {
 			.insert(WgpuRenderTextures {
 				fragment_bind_group: textures,
 				empty_texture,
+			});
+
+		render_state
+			.renderer
+			.write()
+			.callback_resources
+			.insert(WgpuMatteTextures {
+				matte_bind_groups: BTreeMap::new(),
 			});
 	}
 }
@@ -1116,10 +1133,11 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 				[self.sprite_coords[2], self.sprite_coords[1]],
 			],
 			color: [1.0, 1.0, 1.0, 1.0],
+			matte_tex_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
 			is_ycbcr: if self.is_ycbcr { 1 } else { 0 },
-			_padding_0: 0,
-			_padding_1: 0,
-			_padding_2: 0,
+			has_matte: 0,
+			matte_is_ycbcr: 0,
+			_padding: 0,
 		};
 
 		queue.write_buffer(
