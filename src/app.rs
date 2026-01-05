@@ -1488,8 +1488,10 @@ impl eframe::App for App {
 										let mut path = old_selected.clone();
 										path[old_selected.len() - 1] += i as usize;
 										let new_layer = get_selected_layer(node, &path);
-										new_layer.try_lock().unwrap().multi_selected = true;
-										self.multi_select.push(new_layer);
+										if !new_layer.try_lock().unwrap().multi_selected {
+											new_layer.try_lock().unwrap().multi_selected = true;
+											self.multi_select.push(new_layer);
+										}
 									}
 								} else {
 									for i in diff..0 {
@@ -1497,14 +1499,18 @@ impl eframe::App for App {
 										path[old_selected.len() - 1] =
 											(path[old_selected.len() - 1] as isize + i) as usize;
 										let new_layer = get_selected_layer(node, &path);
-										new_layer.try_lock().unwrap().multi_selected = true;
-										self.multi_select.push(new_layer);
+										if !new_layer.try_lock().unwrap().multi_selected {
+											new_layer.try_lock().unwrap().multi_selected = true;
+											self.multi_select.push(new_layer);
+										}
 									}
 								}
 							} else {
 								let new_layer = get_selected_layer(node, &self.selected);
-								new_layer.try_lock().unwrap().multi_selected = true;
-								self.multi_select.push(new_layer);
+								if !new_layer.try_lock().unwrap().multi_selected {
+									new_layer.try_lock().unwrap().multi_selected = true;
+									self.multi_select.push(new_layer);
+								}
 							}
 						} else if ui.ctx().interaction_snapshot(|i| i.clicked.is_some())
 							&& ui.ctx().input(|i| {
