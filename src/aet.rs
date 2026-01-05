@@ -401,25 +401,7 @@ impl TreeNode for AetSceneNode {
 		}) {
 			*selected = path.to_vec();
 			undoer.add_undo(
-				AetLayerNode {
-					name: String::from("DUMMY"),
-					start_time: 0.0,
-					end_time: 0.0,
-					offset_time: 0.0,
-					time_scale: 1.0,
-					flags: kkdlib::aet::LayerFlags::new(),
-					quality: kkdlib::aet::LayerQuality::None,
-					item: AetItemNode::Comp(self.root.clone()),
-					markers: Vec::new(),
-					video: None,
-					parent: None,
-					audio: None,
-					sprites: Rc::new(Mutex::new(Vec::new())),
-					visible: false,
-					selected_key: 0,
-					want_deletion: false,
-					want_duplicate: false,
-				},
+				AetLayerNode::create_with_item(AetItemNode::Comp(self.root.clone())),
 				path.to_vec(),
 			);
 		}
@@ -529,6 +511,17 @@ impl AetSceneNode {
 			mat.w.x = self.width as f32 / 2.0;
 			mat.w.y = self.height as f32 / 2.0;
 		}
+
+		if let Some(camera) = &self.camera {
+			let mut eye = [0.0; 3];
+
+			eye[0] = camera.eye_x.interpolate(self.current_time) - self.width as f32 * 0.5;
+			eye[1] = camera.eye_y.interpolate(self.current_time) - self.height as f32 * 0.5;
+			eye[2] = camera.eye_z.interpolate(self.current_time);
+
+			mat.w = mat.x * -eye[0] + mat.y * -eye[1] + mat.z * -eye[2] + mat.w;
+		}
+
 		let mut videos = WgpuAetVideos {
 			videos: Vec::new(),
 			viewport_size: [self.width as f32, self.height as f32],
@@ -544,44 +537,12 @@ impl AetSceneNode {
 			selected,
 		);
 
-		let w = rect.max.x - rect.min.x;
-		let h = rect.max.y - rect.min.y;
-		let ar = w / h;
-		let rect = if ar > self.width as f32 / self.height as f32 {
-			let adjusted_w = h / self.height as f32 * self.width as f32;
-			let remaining_w = w - adjusted_w;
-			egui::Rect {
-				min: egui::Pos2 {
-					x: rect.min.x + remaining_w / 2.0,
-					y: rect.min.y,
-				},
-				max: egui::Pos2 {
-					x: rect.min.x + adjusted_w + remaining_w / 2.0,
-					y: rect.min.y + h,
-				},
-			}
-		} else {
-			let adjusted_h = w / self.width as f32 * self.height as f32;
-			let remaining_h = h - adjusted_h;
-			egui::Rect {
-				min: egui::Pos2 {
-					x: rect.min.x,
-					y: rect.min.y + remaining_h / 2.0,
-				},
-				max: egui::Pos2 {
-					x: rect.min.x + w,
-					y: rect.min.y + adjusted_h + remaining_h / 2.0,
-				},
-			}
-		};
-
 		ui.painter()
 			.add(egui_wgpu::Callback::new_paint_callback(rect, videos));
 
 		if selected.len() >= 3 {
 			let mut frame = self.current_time;
 			let mut translation = [0.0; 3];
-			let mut rotation = [0.0; 3];
 			let mut scale = [1.0; 3];
 			if self.centered {
 				translation[0] = self.width as f64 / 2.0;
@@ -591,29 +552,10 @@ impl AetSceneNode {
 			if let Some(video) = &self.root.layers[selected[2]].try_lock().unwrap().video {
 				translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
 				translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
-				if let Some(_3d) = &video._3d {
-					translation[2] -= scale[2] * _3d.pos_z.interpolate(frame) as f64;
-				}
 				scale[0] *= video.scale_x.interpolate(frame) as f64;
 				scale[1] *= video.scale_y.interpolate(frame) as f64;
-				if let Some(_3d) = &video._3d {
-					scale[2] *= _3d.scale_z.interpolate(frame) as f64;
-				}
 				translation[0] -= scale[0] * video.anchor_x.interpolate(frame) as f64;
 				translation[1] -= scale[1] * video.anchor_y.interpolate(frame) as f64;
-				if let Some(_3d) = &video._3d {
-					translation[2] -= scale[2] * _3d.anchor_z.interpolate(frame) as f64;
-				}
-
-				if let Some(_3d) = &video._3d {
-					rotation[0] += _3d.dir_x.interpolate(frame).to_radians() as f64;
-					rotation[1] += _3d.dir_y.interpolate(frame).to_radians() as f64;
-					rotation[2] += _3d.dir_z.interpolate(frame).to_radians() as f64;
-
-					rotation[0] += _3d.rot_x.interpolate(frame).to_radians() as f64;
-					rotation[1] += _3d.rot_y.interpolate(frame).to_radians() as f64;
-				}
-				rotation[2] += video.rot_z.interpolate(frame).to_radians() as f64;
 			}
 
 			let selected =
@@ -633,70 +575,34 @@ impl AetSceneNode {
 						{
 							translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
 							translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
-							if let Some(_3d) = &video._3d {
-								translation[2] -= scale[2] * _3d.pos_z.interpolate(frame) as f64;
-							}
 							scale[0] *= video.scale_x.interpolate(frame) as f64;
 							scale[1] *= video.scale_y.interpolate(frame) as f64;
-							if let Some(_3d) = &video._3d {
-								scale[2] *= _3d.scale_z.interpolate(frame) as f64;
-							}
 							translation[0] -= scale[0] * video.anchor_x.interpolate(frame) as f64;
 							translation[1] -= scale[1] * video.anchor_y.interpolate(frame) as f64;
-							if let Some(_3d) = &video._3d {
-								translation[2] -= scale[2] * _3d.anchor_z.interpolate(frame) as f64;
-							}
-
-							if let Some(_3d) = &video._3d {
-								rotation[0] += _3d.dir_x.interpolate(frame).to_radians() as f64;
-								rotation[1] += _3d.dir_y.interpolate(frame).to_radians() as f64;
-								rotation[2] += _3d.dir_z.interpolate(frame).to_radians() as f64;
-
-								rotation[0] += _3d.rot_x.interpolate(frame).to_radians() as f64;
-								rotation[1] += _3d.rot_y.interpolate(frame).to_radians() as f64;
-							}
-							rotation[2] += video.rot_z.interpolate(frame).to_radians() as f64;
 						}
 
 						if let Some(video) = &layer.video {
 							translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
 							translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
-							if let Some(_3d) = &video._3d {
-								translation[2] -= scale[2] * _3d.pos_z.interpolate(frame) as f64;
-							}
 							scale[0] *= video.scale_x.interpolate(frame) as f64;
 							scale[1] *= video.scale_y.interpolate(frame) as f64;
-							if let Some(_3d) = &video._3d {
-								scale[2] *= _3d.scale_z.interpolate(frame) as f64;
-							}
 							translation[0] -= scale[0] * video.anchor_x.interpolate(frame) as f64;
 							translation[1] -= scale[1] * video.anchor_y.interpolate(frame) as f64;
-							if let Some(_3d) = &video._3d {
-								translation[2] -= scale[2] * _3d.anchor_z.interpolate(frame) as f64;
-							}
-
-							if let Some(_3d) = &video._3d {
-								rotation[0] += _3d.dir_x.interpolate(frame).to_radians() as f64;
-								rotation[1] += _3d.dir_y.interpolate(frame).to_radians() as f64;
-								rotation[2] += _3d.dir_z.interpolate(frame).to_radians() as f64;
-
-								rotation[0] += _3d.rot_x.interpolate(frame).to_radians() as f64;
-								rotation[1] += _3d.rot_y.interpolate(frame).to_radians() as f64;
-							}
-							rotation[2] += video.rot_z.interpolate(frame).to_radians() as f64;
 						}
 
 						frame = (frame - layer.start_time) * layer.time_scale + layer.offset_time;
 						comp.layers[*i].clone()
 					});
 
-			if let Some(video) = &mut selected.try_lock().unwrap().video {
+			if !selected.try_lock().unwrap().multi_selected
+				&& let Some(video) = &mut selected.try_lock().unwrap().video
+			{
 				translation[0] += video.anchor_x.interpolate(frame) as f64 * scale[0];
 				translation[1] += video.anchor_y.interpolate(frame) as f64 * scale[1];
 				translation[1] = -translation[1] + self.height as f64;
 
 				self.gizmo.update_config(GizmoConfig {
-					projection_matrix: glam::DMat4::from_cols_array_2d(&[
+					projection_matrix: transform_gizmo_egui::math::DMat4::from_cols_array_2d(&[
 						[2.0 / self.width as f64, 0.0, 0.0, 0.0],
 						[0.0, 2.0 / self.height as f64, 0.0, 0.0],
 						[-1.0, -1.0, -1.0, 0.0],
@@ -712,13 +618,8 @@ impl AetSceneNode {
 
 				let transform =
 					transform_gizmo_egui::math::Transform::from_scale_rotation_translation(
-						scale,
-						glam::DQuat::from_euler(
-							glam::EulerRot::XYZ,
-							-rotation[0],
-							-rotation[1],
-							rotation[2],
-						),
+						transform_gizmo_egui::math::DVec3::default(),
+						transform_gizmo_egui::math::DQuat::default(),
 						translation,
 					);
 
@@ -747,23 +648,21 @@ impl AetSceneNode {
 							}
 						}
 						GizmoResult::Rotation {
-							axis,
+							axis: _,
 							delta,
 							total: _,
 							is_view_axis: _,
 						} => {
-							if axis.z == 1.0 {
-								if video.rot_z.keys.is_empty() {
-									video.rot_z.keys.push(aet::FCurveKey {
-										frame: 0.0,
-										value: 0.0,
-										tangent: 0.0,
-									});
-								}
+							if video.rot_z.keys.is_empty() {
+								video.rot_z.keys.push(aet::FCurveKey {
+									frame: 0.0,
+									value: 0.0,
+									tangent: 0.0,
+								});
+							}
 
-								for key in &mut video.rot_z.keys {
-									key.value -= delta.to_degrees() as f32;
-								}
+							for key in &mut video.rot_z.keys {
+								key.value -= delta.to_degrees() as f32;
 							}
 						}
 						_ => {}
@@ -942,8 +841,9 @@ impl AetCompNode {
 
 					sprites: Rc::new(Mutex::new(Vec::new())),
 
-					visible: layer.flags.video_active(),
 					selected_key: 0,
+					visible: layer.flags.video_active(),
+					multi_selected: false,
 
 					want_deletion: false,
 					want_duplicate: false,
@@ -1188,7 +1088,7 @@ impl AetCompNode {
 			}
 
 			// Draw rectangle around selected elem
-			if path == selected {
+			if path == selected || layer.multi_selected {
 				let (width, height) = if let AetItemNode::Video(video) = &layer.item {
 					(video.width as f32, video.height as f32)
 				} else if let Some(video) = &layer.video {
@@ -1399,7 +1299,7 @@ impl AetCompNode {
 				let mut layer = layer.try_lock().unwrap();
 				iter.next(
 					ui,
-					egui::Id::new(&layer.name).with(i),
+					ui.make_persistent_id(egui::Id::new(&layer.name).with(path).with(i)),
 					i,
 					true,
 					|ui, item_handle| {
@@ -1432,7 +1332,12 @@ impl AetCompNode {
 								handle.handle_response(
 									ui.interact(
 										rect,
-										egui::Id::new(&layer.name).with(state.index).with("dnd"),
+										ui.make_persistent_id(
+											egui::Id::new(&layer.name)
+												.with(path)
+												.with(state.index)
+												.with("dnd"),
+										),
 										egui::Sense::click_and_drag(),
 									),
 									ui,
@@ -1462,6 +1367,25 @@ impl AetCompNode {
 		}
 
 		last_resp.unwrap_or(ui.response())
+	}
+
+	pub fn deep_eq(&self, other: &Self) -> bool {
+		self.layers.len() == other.layers.len()
+			&& self
+				.layers
+				.iter()
+				.zip(other.layers.iter())
+				.all(|(a, b)| *a.try_lock().unwrap() == *b.try_lock().unwrap())
+	}
+
+	pub fn deep_clone(&self) -> Self {
+		Self {
+			layers: self
+				.layers
+				.iter()
+				.map(|layer| Rc::new(Mutex::new(layer.try_lock().unwrap().clone())))
+				.collect(),
+		}
 	}
 }
 
@@ -1509,8 +1433,9 @@ pub struct AetLayerNode {
 
 	pub sprites: Rc<Mutex<Vec<Rc<Mutex<crate::spr::SpriteInfoNode>>>>>,
 
-	pub visible: bool,
 	pub selected_key: usize,
+	pub visible: bool,
+	pub multi_selected: bool,
 
 	pub want_deletion: bool,
 	pub want_duplicate: bool,
@@ -1562,7 +1487,7 @@ impl TreeNode for AetLayerNode {
 	}
 
 	fn has_custom_tree(&self) -> bool {
-		self.has_children()
+		true
 	}
 
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
@@ -1588,52 +1513,59 @@ impl TreeNode for AetLayerNode {
 		let resp = ui
 			.horizontal(|ui| {
 				self.label_sameline(ui);
-				crate::app::collapsing_selectable_label(
-					ui,
-					self.name.clone(),
-					path,
-					path == *selected,
-					|ui| {
-						let AetItemNode::Comp(comp) = &mut self.item else {
-							panic!();
-						};
 
-						comp.display_tree(ui, path, selected, frame, undoer);
+				if let AetItemNode::Comp(comp) = &self.item
+					&& !comp.layers.is_empty()
+				{
+					crate::app::collapsing_selectable_label(
+						ui,
+						self.name.clone(),
+						path,
+						path == *selected || self.multi_selected,
+						|ui| {
+							let AetItemNode::Comp(comp) = &mut self.item else {
+								panic!();
+							};
 
-						if comp.layers.iter().any(|layer| {
-							let layer = layer.try_lock().unwrap();
-							layer.want_deletion || layer.want_duplicate
-						}) {
-							*selected = path.to_vec();
-							undoer.add_undo(self.clone(), path.to_vec());
-						}
+							comp.display_tree(ui, path, selected, frame, undoer);
 
-						let AetItemNode::Comp(comp) = &mut self.item else {
-							panic!();
-						};
+							if comp.layers.iter().any(|layer| {
+								let layer = layer.try_lock().unwrap();
+								layer.want_deletion || layer.want_duplicate
+							}) {
+								*selected = path.to_vec();
+								undoer.add_undo(self.clone(), path.to_vec());
+							}
 
-						comp.layers
-							.retain(|layer| !layer.try_lock().unwrap().want_deletion);
+							let AetItemNode::Comp(comp) = &mut self.item else {
+								panic!();
+							};
 
-						for i in comp
-							.layers
-							.iter()
-							.enumerate()
-							.filter(|(_, layer)| layer.try_lock().unwrap().want_duplicate)
-							.map(|(i, _)| i)
-							.collect::<Vec<_>>()
-						{
-							comp.layers.insert(i, comp.layers[i].clone());
-						}
+							comp.layers
+								.retain(|layer| !layer.try_lock().unwrap().want_deletion);
 
-						for layer in &mut comp.layers {
-							layer.try_lock().unwrap().want_duplicate = false;
-						}
-					},
-				)
+							for i in comp
+								.layers
+								.iter()
+								.enumerate()
+								.filter(|(_, layer)| layer.try_lock().unwrap().want_duplicate)
+								.map(|(i, _)| i)
+								.collect::<Vec<_>>()
+							{
+								comp.layers.insert(i, comp.layers[i].clone());
+							}
+
+							for layer in &mut comp.layers {
+								layer.try_lock().unwrap().want_duplicate = false;
+							}
+						},
+					)
+					.header_response
+				} else {
+					ui.selectable_label(path == *selected || self.multi_selected, &self.name)
+				}
 			})
-			.inner
-			.header_response;
+			.inner;
 
 		if self.has_context_menu() {
 			let menu = egui::Popup::context_menu(&resp).show(|ui| self.display_ctx_menu(ui));
@@ -2069,25 +2001,9 @@ impl TreeNode for AetLayerNode {
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
 		if let AetItemNode::Comp(comp) = &mut self.item {
 			if ui.button("Add").clicked() {
-				comp.layers.push(Rc::new(Mutex::new(AetLayerNode {
-					name: String::from("DUMMY"),
-					start_time: 0.0,
-					end_time: self.end_time - self.start_time,
-					offset_time: 0.0,
-					time_scale: 1.0,
-					flags: self.flags,
-					quality: aet::LayerQuality::Best,
-					item: AetItemNode::None,
-					markers: Vec::new(),
-					video: None,
-					parent: None,
-					audio: None,
-					sprites: self.sprites.clone(),
-					visible: self.visible,
-					selected_key: 0,
-					want_deletion: false,
-					want_duplicate: false,
-				})))
+				comp.layers.push(Rc::new(Mutex::new(Self::create_with_item(
+					AetItemNode::None,
+				))));
 			}
 		};
 
@@ -2520,6 +2436,29 @@ impl AetLayerNode {
 			}
 		} else {
 			self.item = other.item.clone();
+		}
+	}
+
+	pub fn create_with_item(item: AetItemNode) -> Self {
+		Self {
+			name: String::from("DUMMY"),
+			start_time: 0.0,
+			end_time: 0.0,
+			offset_time: 0.0,
+			time_scale: 1.0,
+			flags: kkdlib::aet::LayerFlags::new(),
+			quality: kkdlib::aet::LayerQuality::None,
+			item,
+			markers: Vec::new(),
+			video: None,
+			parent: None,
+			audio: None,
+			sprites: Rc::new(Mutex::new(Vec::new())),
+			selected_key: 0,
+			visible: false,
+			multi_selected: false,
+			want_deletion: false,
+			want_duplicate: false,
 		}
 	}
 }

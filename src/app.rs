@@ -7,6 +7,7 @@ use std::collections::*;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::*;
+use transform_gizmo_egui::prelude::*;
 
 pub trait TreeNode {
 	fn label(&self) -> &str;
@@ -65,25 +66,7 @@ impl LayerUndoer {
 		Self {
 			undos: VecDeque::new(),
 			redos: Vec::new(),
-			original_layer: aet::AetLayerNode {
-				name: String::from("DUMMY"),
-				start_time: 0.0,
-				end_time: 0.0,
-				offset_time: 0.0,
-				time_scale: 1.0,
-				flags: kkdlib::aet::LayerFlags::new(),
-				quality: kkdlib::aet::LayerQuality::None,
-				item: aet::AetItemNode::None,
-				markers: Vec::new(),
-				video: None,
-				parent: None,
-				audio: None,
-				sprites: Rc::new(Mutex::new(Vec::new())),
-				visible: false,
-				selected_key: 0,
-				want_deletion: false,
-				want_duplicate: false,
-			},
+			original_layer: aet::AetLayerNode::create_with_item(aet::AetItemNode::None),
 			current_path: Vec::new(),
 			flux: None,
 		}
@@ -150,7 +133,7 @@ impl LayerUndoer {
 
 					comp.layers[*i].clone()
 				});
-		let layer = layer.lock().unwrap();
+		let layer = layer.try_lock().unwrap();
 
 		if selected == &self.current_path {
 			if let Some((time, last_update)) = &mut self.flux {
@@ -172,6 +155,60 @@ impl LayerUndoer {
 			self.original_layer = layer.clone();
 		}
 	}
+
+	pub fn feed_multi_select_state(
+		&mut self,
+		current_time: f64,
+		selected: &[usize],
+		set: &aet::AetSetNode,
+	) {
+		let scene = &set.scenes[selected[1]];
+		let comp = selected.iter().skip(3).fold(scene.root.clone(), |comp, i| {
+			let layer = comp.layers[*i].try_lock().unwrap();
+			let aet::AetItemNode::Comp(comp) = &layer.item else {
+				panic!();
+			};
+			comp.clone()
+		});
+
+		if selected == &self.current_path {
+			if let Some((time, last_update)) = &mut self.flux {
+				let aet::AetItemNode::Comp(last_update) = &mut last_update.item else {
+					panic!();
+				};
+
+				if !last_update.deep_eq(&comp) {
+					*time = current_time;
+					*last_update = comp.deep_clone();
+				} else if current_time >= *time + 1.0 {
+					self.add_undo(self.original_layer.clone(), self.current_path.clone());
+					self.original_layer = aet::AetLayerNode::create_with_item(
+						aet::AetItemNode::Comp(comp.deep_clone()),
+					);
+				}
+			} else {
+				let aet::AetItemNode::Comp(original_layer) = &self.original_layer.item else {
+					panic!();
+				};
+
+				if !original_layer.deep_eq(&comp) {
+					self.flux = Some((
+						current_time,
+						aet::AetLayerNode::create_with_item(aet::AetItemNode::Comp(
+							comp.deep_clone(),
+						)),
+					));
+				}
+			}
+		} else {
+			if self.flux.is_some() {
+				self.add_undo(self.original_layer.clone(), self.current_path.clone());
+			}
+			self.current_path = selected.to_vec();
+			self.original_layer =
+				aet::AetLayerNode::create_with_item(aet::AetItemNode::Comp(comp.deep_clone()));
+		}
+	}
 }
 
 pub struct App {
@@ -184,6 +221,7 @@ pub struct App {
 	spr_db: Option<spr_db::SprDbNode>,
 	spr_db_filepath: Option<PathBuf>,
 	selected: Vec<usize>,
+	multi_select: Vec<Rc<Mutex<aet::AetLayerNode>>>,
 	file_picker_result: Option<mpsc::Receiver<Option<(std::path::PathBuf, Vec<u8>)>>>,
 
 	modern_writing_modal: bool,
@@ -218,6 +256,7 @@ impl App {
 			spr_db: None,
 			spr_db_filepath: None,
 			selected: Vec::new(),
+			multi_select: Vec::new(),
 			file_picker_result: None,
 			modern_writing_modal: false,
 			undoer: LayerUndoer::new(),
@@ -741,7 +780,7 @@ impl App {
 				&& let Some(scene) = aet_set.scenes.first()
 				&& let Some(sprite_id) = scene.root.get_sprite_id()
 				&& let Some(db_set) = spr_db.sets.iter().find(|set| {
-					set.lock()
+					set.try_lock()
 						.unwrap()
 						.entries
 						.iter()
@@ -966,6 +1005,20 @@ impl App {
 	}
 }
 
+fn get_selected_layer(aet_set: &aet::AetSetNode, path: &[usize]) -> Rc<Mutex<aet::AetLayerNode>> {
+	path.iter().skip(3).fold(
+		aet_set.scenes[path[1]].root.layers[path[2]].clone(),
+		|layer, i| {
+			let layer = layer.try_lock().unwrap();
+			let aet::AetItemNode::Comp(comp) = &layer.item else {
+				panic!();
+			};
+
+			comp.layers[*i].clone()
+		},
+	)
+}
+
 fn apply_redo(aet_set: &mut aet::AetSetNode, undoer: &mut LayerUndoer) {
 	let Some((undone, path)) = undoer.redo() else {
 		return;
@@ -977,50 +1030,26 @@ fn apply_redo(aet_set: &mut aet::AetSetNode, undoer: &mut LayerUndoer) {
 
 		for layer in &comp.layers {
 			let mut layer = layer.try_lock().unwrap();
+			layer.multi_selected = false;
 			layer.want_deletion = false;
 			layer.want_duplicate = false;
 		}
 
 		undoer.add_undo(
-			aet::AetLayerNode {
-				name: String::from("DUMMY"),
-				start_time: 0.0,
-				end_time: 0.0,
-				offset_time: 0.0,
-				time_scale: 1.0,
-				flags: kkdlib::aet::LayerFlags::new(),
-				quality: kkdlib::aet::LayerQuality::None,
-				item: aet::AetItemNode::Comp(aet_set.scenes[path[1]].root.clone()),
-				markers: Vec::new(),
-				video: None,
-				parent: None,
-				audio: None,
-				sprites: Rc::new(Mutex::new(Vec::new())),
-				visible: false,
-				selected_key: 0,
-				want_deletion: false,
-				want_duplicate: false,
-			},
+			aet::AetLayerNode::create_with_item(aet::AetItemNode::Comp(
+				aet_set.scenes[path[1]].root.clone(),
+			)),
 			path.clone(),
 		);
 
 		aet_set.scenes[path[1]].root = comp;
 	} else {
-		let layer = path.iter().skip(3).fold(
-			aet_set.scenes[path[1]].root.layers[path[2]].clone(),
-			|layer, i| {
-				let layer = layer.try_lock().unwrap();
-				let aet::AetItemNode::Comp(comp) = &layer.item else {
-					panic!();
-				};
-
-				comp.layers[*i].clone()
-			},
-		);
+		let layer = get_selected_layer(aet_set, &path);
 
 		if let aet::AetItemNode::Comp(comp) = &undone.item {
 			for layer in &comp.layers {
 				let mut layer = layer.try_lock().unwrap();
+				layer.multi_selected = false;
 				layer.want_deletion = false;
 				layer.want_duplicate = false;
 			}
@@ -1043,50 +1072,26 @@ fn apply_undo(aet_set: &mut aet::AetSetNode, undoer: &mut LayerUndoer) {
 
 		for layer in &comp.layers {
 			let mut layer = layer.try_lock().unwrap();
+			layer.multi_selected = false;
 			layer.want_deletion = false;
 			layer.want_duplicate = false;
 		}
 
 		undoer.add_redo(
-			aet::AetLayerNode {
-				name: String::from("DUMMY"),
-				start_time: 0.0,
-				end_time: 0.0,
-				offset_time: 0.0,
-				time_scale: 1.0,
-				flags: kkdlib::aet::LayerFlags::new(),
-				quality: kkdlib::aet::LayerQuality::None,
-				item: aet::AetItemNode::Comp(aet_set.scenes[path[1]].root.clone()),
-				markers: Vec::new(),
-				video: None,
-				parent: None,
-				audio: None,
-				sprites: Rc::new(Mutex::new(Vec::new())),
-				visible: false,
-				selected_key: 0,
-				want_deletion: false,
-				want_duplicate: false,
-			},
+			aet::AetLayerNode::create_with_item(aet::AetItemNode::Comp(
+				aet_set.scenes[path[1]].root.clone(),
+			)),
 			path.clone(),
 		);
 
 		aet_set.scenes[path[1]].root = comp;
 	} else {
-		let layer = path.iter().skip(3).fold(
-			aet_set.scenes[path[1]].root.layers[path[2]].clone(),
-			|layer, i| {
-				let layer = layer.try_lock().unwrap();
-				let aet::AetItemNode::Comp(comp) = &layer.item else {
-					panic!();
-				};
-
-				comp.layers[*i].clone()
-			},
-		);
+		let layer = get_selected_layer(aet_set, &path);
 
 		if let aet::AetItemNode::Comp(comp) = &undone.item {
 			for layer in &comp.layers {
 				let mut layer = layer.try_lock().unwrap();
+				layer.multi_selected = false;
 				layer.want_deletion = false;
 				layer.want_duplicate = false;
 			}
@@ -1196,6 +1201,8 @@ impl eframe::App for App {
 							scene.root.update_video_textures(spr_db, spr_set);
 						}
 					}
+
+					self.multi_select.clear();
 				}
 
 				if self.undoer.has_redo() && input.consume_shortcut(&REDO_SHORTCUT) {
@@ -1208,6 +1215,22 @@ impl eframe::App for App {
 							scene.root.update_video_textures(spr_db, spr_set);
 						}
 					}
+
+					self.multi_select.clear();
+				}
+			}
+
+			if !self.multi_select.is_empty() {
+				if input.key_pressed(egui::Key::Delete)
+					|| self
+						.multi_select
+						.iter()
+						.any(|layer| layer.try_lock().unwrap().want_deletion)
+				{
+					for layer in &mut self.multi_select {
+						layer.try_lock().unwrap().want_deletion = true;
+					}
+					self.multi_select.clear();
 				}
 			}
 		});
@@ -1230,8 +1253,15 @@ impl eframe::App for App {
 		}
 
 		if let Some(aet_set) = &self.aet_set {
-			self.undoer
-				.feed_state(ctx.input(|input| input.time), &self.selected, aet_set);
+			if self.multi_select.is_empty() {
+				self.undoer
+					.feed_state(ctx.input(|input| input.time), &self.selected, aet_set);
+			} else {
+				let mut path = self.selected.clone();
+				path.pop();
+				self.undoer
+					.feed_multi_select_state(ctx.input(|input| input.time), &path, aet_set);
+			}
 		}
 
 		if let Some(rx) = &mut self.file_picker_result
@@ -1345,6 +1375,8 @@ impl eframe::App for App {
 									scene.root.update_video_textures(spr_db, spr_set);
 								}
 							}
+
+							self.multi_select.clear();
 						}
 
 						if ui
@@ -1364,6 +1396,8 @@ impl eframe::App for App {
 									scene.root.update_video_textures(spr_db, spr_set);
 								}
 							}
+
+							self.multi_select.clear();
 						}
 					} else {
 						ui.add_enabled(
@@ -1384,7 +1418,7 @@ impl eframe::App for App {
 		egui::SidePanel::right("RightSidePanel")
 			.resizable(true)
 			.show(ctx, |ui| {
-				if !self.selected.is_empty() {
+				if !self.selected.is_empty() && self.multi_select.is_empty() {
 					egui::TopBottomPanel::bottom("NodeOptions")
 						.resizable(true)
 						.show_inside(ui, |ui| {
@@ -1410,6 +1444,8 @@ impl eframe::App for App {
 
 				egui::ScrollArea::vertical().show(ui, |ui| {
 					if let Some(node) = &mut self.aet_set {
+						let old_selected = self.selected.clone();
+
 						show_node(
 							ui,
 							node,
@@ -1419,7 +1455,71 @@ impl eframe::App for App {
 							frame,
 							&mut self.undoer,
 						);
+
+						if self.selected.len() >= 3
+							&& old_selected.len() >= 3
+							&& old_selected[0] == 0
+							&& self.selected != old_selected
+							&& self
+								.selected
+								.iter()
+								.rev()
+								.skip(1)
+								.zip(old_selected.iter().rev().skip(1))
+								.all(|(new, old)| new == old)
+							&& ui.ctx().input(|i| {
+								(i.modifiers.ctrl
+									|| (self.selected[self.selected.len() - 2]
+										== old_selected[old_selected.len() - 2]
+										&& i.modifiers.shift)) && i.pointer.primary_clicked()
+									&& ui.max_rect().contains(i.pointer.interact_pos().unwrap())
+							}) {
+							if self.multi_select.is_empty() {
+								let old_layer = get_selected_layer(node, &old_selected);
+								old_layer.try_lock().unwrap().multi_selected = true;
+								self.multi_select.push(old_layer);
+							}
+
+							if ui.ctx().input(|i| i.modifiers.shift) {
+								let diff = self.selected[self.selected.len() - 1] as isize
+									- old_selected[old_selected.len() - 1] as isize;
+								if diff.is_positive() {
+									for i in 1..=diff {
+										let mut path = old_selected.clone();
+										path[old_selected.len() - 1] += i as usize;
+										let new_layer = get_selected_layer(node, &path);
+										new_layer.try_lock().unwrap().multi_selected = true;
+										self.multi_select.push(new_layer);
+									}
+								} else {
+									for i in diff..0 {
+										let mut path = old_selected.clone();
+										path[old_selected.len() - 1] =
+											(path[old_selected.len() - 1] as isize + i) as usize;
+										let new_layer = get_selected_layer(node, &path);
+										new_layer.try_lock().unwrap().multi_selected = true;
+										self.multi_select.push(new_layer);
+									}
+								}
+							} else {
+								let new_layer = get_selected_layer(node, &self.selected);
+								new_layer.try_lock().unwrap().multi_selected = true;
+								self.multi_select.push(new_layer);
+							}
+						} else if ui.ctx().interaction_snapshot(|i| i.clicked.is_some())
+							&& ui.ctx().input(|i| {
+								i.pointer.primary_clicked()
+									&& ui.max_rect().contains(i.pointer.interact_pos().unwrap())
+							}) && !ui.ctx().is_popup_open()
+						{
+							for layer in &mut self.multi_select {
+								let mut layer = layer.try_lock().unwrap();
+								layer.multi_selected = false;
+							}
+							self.multi_select.clear();
+						}
 					}
+
 					if let Some(node) = &mut self.sprite_set {
 						show_node(
 							ui,
@@ -1542,6 +1642,7 @@ impl eframe::App for App {
 				if let Some(node) = &mut self.aet_set
 					&& self.selected.len() >= 2
 					&& self.selected[0] == 0
+					&& self.multi_select.is_empty()
 					&& let Some(scene) = node.scenes.get_mut(self.selected[1])
 				{
 					scene.root.show_node_curve_editor(
@@ -1579,7 +1680,7 @@ impl eframe::App for App {
 				for (i, spr) in spr_set
 					.sprites_node
 					.children
-					.lock()
+					.try_lock()
 					.unwrap()
 					.iter_mut()
 					.enumerate()
@@ -1622,9 +1723,128 @@ impl eframe::App for App {
 
 		egui::CentralPanel::default().show(ctx, |ui| {
 			let selected = self.selected.clone();
+			let has_multi_select = !self.multi_select.is_empty();
 			if let Some(scene) = self.get_active_scene() {
 				let (rect, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::empty());
-				scene.display_visual(ui, rect, &selected)
+				let ar = rect.width() / rect.height();
+				let rect = if ar > scene.width as f32 / scene.height as f32 {
+					let adjusted_w = rect.height() / scene.height as f32 * scene.width as f32;
+					let remaining_w = rect.width() - adjusted_w;
+					egui::Rect {
+						min: egui::Pos2 {
+							x: rect.min.x + remaining_w / 2.0,
+							y: rect.min.y,
+						},
+						max: egui::Pos2 {
+							x: rect.min.x + adjusted_w + remaining_w / 2.0,
+							y: rect.min.y + rect.height(),
+						},
+					}
+				} else {
+					let adjusted_h = rect.width() / scene.width as f32 * scene.height as f32;
+					let remaining_h = rect.height() - adjusted_h;
+					egui::Rect {
+						min: egui::Pos2 {
+							x: rect.min.x,
+							y: rect.min.y + remaining_h / 2.0,
+						},
+						max: egui::Pos2 {
+							x: rect.min.x + rect.width(),
+							y: rect.min.y + adjusted_h + remaining_h / 2.0,
+						},
+					}
+				};
+
+				scene.display_visual(ui, rect, &selected);
+
+				if has_multi_select {
+					scene.gizmo.update_config(GizmoConfig {
+						projection_matrix: transform_gizmo_egui::math::DMat4::from_cols_array_2d(
+							&[
+								[2.0 / scene.width as f64, 0.0, 0.0, 0.0],
+								[0.0, 2.0 / scene.height as f64, 0.0, 0.0],
+								[-1.0, -1.0, -1.0, 0.0],
+								[-1.0, -1.0, 0.0, 1.0],
+							],
+						)
+						.into(),
+						viewport: rect,
+						modes: GizmoMode::TranslateX | GizmoMode::TranslateY | GizmoMode::RotateZ,
+						snapping: true,
+						snap_distance: 5.0,
+						..Default::default()
+					});
+
+					let transform =
+						transform_gizmo_egui::math::Transform::from_scale_rotation_translation(
+							transform_gizmo_egui::math::DVec3::default(),
+							transform_gizmo_egui::math::DQuat::default(),
+							transform_gizmo_egui::math::DVec3::from_array([
+								scene.width as f64 / 2.0,
+								scene.height as f64 / 2.0,
+								0.0,
+							]),
+						);
+
+					if let Some((result, _)) = scene.gizmo.interact(ui, &[transform]) {
+						match result {
+							GizmoResult::Translation { delta, total: _ } => {
+								for layer in &mut self.multi_select {
+									let mut layer = layer.try_lock().unwrap();
+									let Some(video) = &mut layer.video else {
+										continue;
+									};
+									if video.pos_x.keys.is_empty() {
+										video.pos_x.keys.push(kkdlib::aet::FCurveKey {
+											frame: 0.0,
+											value: 0.0,
+											tangent: 0.0,
+										});
+									}
+									for key in &mut video.pos_x.keys {
+										key.value += delta.x as f32;
+									}
+
+									if video.pos_y.keys.is_empty() {
+										video.pos_y.keys.push(kkdlib::aet::FCurveKey {
+											frame: 0.0,
+											value: 0.0,
+											tangent: 0.0,
+										});
+									}
+									for key in &mut video.pos_y.keys {
+										key.value += -delta.y as f32;
+									}
+								}
+							}
+							GizmoResult::Rotation {
+								axis: _,
+								delta,
+								total: _,
+								is_view_axis: _,
+							} => {
+								for layer in &mut self.multi_select {
+									let mut layer = layer.try_lock().unwrap();
+									let Some(video) = &mut layer.video else {
+										continue;
+									};
+									if video.rot_z.keys.is_empty() {
+										video.rot_z.keys.push(kkdlib::aet::FCurveKey {
+											frame: 0.0,
+											value: 0.0,
+											tangent: 0.0,
+										});
+									}
+
+									for key in &mut video.rot_z.keys {
+										key.value -= delta.to_degrees() as f32;
+									}
+								}
+							}
+							_ => {}
+						}
+					}
+				}
 			}
 
 			if let Some(node) = &mut self.sprite_set
