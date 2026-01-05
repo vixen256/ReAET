@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   build-windows:
-    name: Build windows
+    name: Build Windows
     runs-on: windows-latest
     continue-on-error: true
     steps:
@@ -23,7 +23,7 @@ jobs:
           path: target/release/ReAET.exe
 
   build-macos:
-    name: Build macos
+    name: Build MacOS
     runs-on: macos-latest
     continue-on-error: true
     steps:
@@ -41,8 +41,27 @@ jobs:
           name: ReAET-macos-aarch64
           path: target/release/ReAET
 
+  build-intel-macos:
+    name: Build MacOS (Intel)
+    runs-on: macos-15-intel
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Build
+        run: |
+          rustup override set nightly
+          cargo build --release
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ReAET-macos-x86_64
+          path: target/release/ReAET
+
   build-linux:
-    name: Build linux
+    name: Build Linux
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
