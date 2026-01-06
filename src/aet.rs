@@ -634,9 +634,7 @@ impl AetSceneNode {
 									tangent: 0.0,
 								});
 							}
-							for key in &mut video.pos_x.keys {
-								key.value += delta.x as f32;
-							}
+
 							if video.pos_y.keys.is_empty() {
 								video.pos_y.keys.push(aet::FCurveKey {
 									frame: 0.0,
@@ -644,8 +642,45 @@ impl AetSceneNode {
 									tangent: 0.0,
 								});
 							}
-							for key in &mut video.pos_y.keys {
-								key.value += -delta.y as f32;
+
+							if ui.input(|i| i.modifiers.ctrl) {
+								if video.pos_x.keys.len() == 1 {
+									video.pos_x.keys[0].value += delta.x as f32;
+								} else if let Some(key) = video
+									.pos_x
+									.keys
+									.iter_mut()
+									.rev()
+									.skip_while(|key| key.frame >= frame + 1.001)
+									.next()
+								{
+									key.value += delta.x as f32;
+								} else {
+									video.pos_x.keys[0].value += delta.x as f32;
+								}
+
+								if video.pos_y.keys.len() == 1 {
+									video.pos_y.keys[0].value += delta.y as f32;
+								} else if let Some(key) = video
+									.pos_y
+									.keys
+									.iter_mut()
+									.rev()
+									.skip_while(|key| key.frame >= frame + 1.0)
+									.next()
+								{
+									key.value += delta.y as f32;
+								} else {
+									video.pos_y.keys[0].value += delta.y as f32;
+								}
+							} else {
+								for key in &mut video.pos_x.keys {
+									key.value += delta.x as f32;
+								}
+
+								for key in &mut video.pos_y.keys {
+									key.value += -delta.y as f32;
+								}
 							}
 						}
 						GizmoResult::Rotation {
@@ -662,8 +697,25 @@ impl AetSceneNode {
 								});
 							}
 
-							for key in &mut video.rot_z.keys {
-								key.value -= delta.to_degrees() as f32;
+							if ui.input(|i| i.modifiers.ctrl) {
+								if video.rot_z.keys.len() == 1 {
+									video.rot_z.keys[0].value -= delta.to_degrees() as f32;
+								} else if let Some(key) = video
+									.pos_x
+									.keys
+									.iter_mut()
+									.rev()
+									.skip_while(|key| key.frame >= frame + 1.001)
+									.next()
+								{
+									key.value -= delta.to_degrees() as f32;
+								} else {
+									video.rot_z.keys[0].value -= delta.to_degrees() as f32;
+								}
+							} else {
+								for key in &mut video.rot_z.keys {
+									key.value -= delta.to_degrees() as f32;
+								}
 							}
 						}
 						_ => {}
@@ -1378,6 +1430,13 @@ impl AetCompNode {
 									frame,
 									undoer,
 								);
+
+								if ui.available_width() < 10.0 {
+									ui.allocate_at_least(
+										egui::vec2(10.0, 0.0),
+										egui::Sense::empty(),
+									);
+								}
 
 								let rect = egui::Rect {
 									min: egui::pos2(
@@ -2399,7 +2458,13 @@ impl AetLayerNode {
 						self.selected_key += 1;
 					}
 
-					if ui.button(ICON_ADD).clicked() {
+					if ui.button(ICON_ADD).clicked()
+						|| ui.input_mut(|i| {
+							i.consume_shortcut(&egui::KeyboardShortcut {
+								modifiers: egui::Modifiers::COMMAND,
+								logical_key: egui::Key::I,
+							})
+						}) {
 						let f = frame.clamp(self.start_time, self.end_time);
 						curve.keys.push(aet::FCurveKey {
 							frame: f,
