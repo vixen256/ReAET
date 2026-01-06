@@ -10,15 +10,6 @@ const YCbCrRgbMatrix = mat3x3 (
 
 const CBCR_MULT = 256.0 / 255.0;
 const CBCR_SUB = 128.0 / 255.0 * CBCR_MULT;
-
-struct TextureInfo {
-	coords_tl: vec2<f32>,
-	coords_tr: vec2<f32>,
-	coords_bl: vec2<f32>,
-	coords_br: vec2<f32>,
-	format: u32,
-}
-
 struct VideoInfo {
 	matrix: mat4x4<f32>,
 	color: vec4<f32>,
@@ -30,22 +21,21 @@ var Sampler: sampler;
 
 @group(1) @binding(0)
 var Texture: texture_2d<f32>;
+@group(1) @binding(1)
+var<uniform> TextureFormat: u32;
 
 @group(2) @binding(0)
-var<uniform> tex_info: TextureInfo;
+var MatteTexture: texture_2d<f32>;
+@group(2) @binding(1)
+var<uniform> MatteTextureFormat: u32;
 
 @group(3) @binding(0)
-var MatteTexture: texture_2d<f32>;
-
-@group(4) @binding(0)
-var<uniform> matte_tex_info: TextureInfo;
-
-@group(5) @binding(0)
 var<uniform> video: VideoInfo;
 
 struct VertexInput {
 	@location(0) position: vec2<f32>,
-	@location(1) tex_index: u32,
+	@location(1) tex_coords: vec2<f32>,
+	@location(2) matte_tex_coords: vec2<f32>,
 }
 
 struct VertexOutput {
@@ -58,22 +48,8 @@ struct VertexOutput {
 fn vs_main(in: VertexInput) -> VertexOutput {
 	var out: VertexOutput;
 	out.position = video.matrix * vec4(in.position, 0.0, 1.0);
-	var tex_coords = array(
-		tex_info.coords_tl,
-		tex_info.coords_tr,
-		tex_info.coords_bl,
-		tex_info.coords_br
-	);
-	out.tex_coords = tex_coords[in.tex_index];
-	if video.has_matte == 1 {
-		var matte_tex_coords = array(
-			matte_tex_info.coords_tl,
-			matte_tex_info.coords_tr,
-			matte_tex_info.coords_bl,
-			matte_tex_info.coords_br
-		);
-		out.matte_tex_coords = matte_tex_coords[in.tex_index];
-	}
+	out.tex_coords = in.tex_coords;
+	out.matte_tex_coords = in.matte_tex_coords;
 	return out;
 }
 
@@ -99,10 +75,11 @@ fn sample(tex: texture_2d<f32>, coords: vec2<f32>, texture_format: u32) -> vec4<
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 	if video.has_matte == 0 {
-		return sample(Texture, in.tex_coords, tex_info.format) * video.color;
+		return sample(Texture, in.tex_coords, TextureFormat) * video.color;
 	} else {
-		var base = sample(Texture, in.tex_coords, tex_info.format);
-		var color = sample(MatteTexture, in.matte_tex_coords, matte_tex_info.format);
+		var base = sample(Texture, in.tex_coords, TextureFormat);
+		var color = sample(MatteTexture, in.matte_tex_coords, MatteTextureFormat);
+		//var color = vec4(in.matte_tex_coords, 0.0, 1.0);
 		color.w *= base.w;
 		return color * video.color;
 	}

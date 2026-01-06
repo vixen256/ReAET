@@ -626,27 +626,33 @@ impl TreeNode for TextureNode {
 		let verticies = [
 			Vertex {
 				position: tr,
-				tex_index: 1,
+				tex_coords: [1.0, 1.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: bl,
-				tex_index: 2,
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: br,
-				tex_index: 3,
+				tex_coords: [1.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: tl,
-				tex_index: 0,
+				tex_coords: [0.0, 1.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: bl,
-				tex_index: 2,
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: tr,
-				tex_index: 1,
+				tex_coords: [1.0, 1.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 		];
 
@@ -669,20 +675,6 @@ impl TreeNode for TextureNode {
 			&resources.uniform_buffers[0].0,
 			0,
 			bytemuck::cast_slice(&[video_info]),
-		);
-
-		let texture_info = TextureInfo {
-			tex_coords: [[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]],
-			format: if self.texture.is_ycbcr() { 1 } else { 0 },
-			_padding_0: 0,
-			_padding_1: 0,
-			_padding_2: 0,
-		};
-
-		render_state.queue.write_buffer(
-			&resources.texture_info_buffer,
-			0,
-			bytemuck::cast_slice(&[texture_info]),
 		);
 	}
 
@@ -754,10 +746,8 @@ impl egui_wgpu::CallbackTrait for WgpuTextureCallback {
 			&texture.fragment_bind_group[self.texture_index as usize].1,
 			&[],
 		);
-		render_pass.set_bind_group(2, &resources.texture_info, &[]);
-		render_pass.set_bind_group(3, &texture.empty_texture, &[]);
-		render_pass.set_bind_group(4, &resources.texture_info, &[]);
-		render_pass.set_bind_group(5, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_bind_group(2, &texture.empty_texture, &[]);
+		render_pass.set_bind_group(3, &resources.uniform_buffers[0].1, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
 	}
@@ -769,13 +759,10 @@ pub struct WgpuRenderResources {
 	pub pipeline_add: wgpu::RenderPipeline,
 	// Multiply and overlay currently unimplemented
 	pub texture_bind_group_layout: wgpu::BindGroupLayout,
-	pub texture_info_bind_group_layout: wgpu::BindGroupLayout,
 	pub video_bind_group_layout: wgpu::BindGroupLayout,
 	pub sampler: wgpu::BindGroup,
 	pub vertex_buffer: wgpu::Buffer,
 	pub uniform_buffers: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
-	pub texture_info_buffer: wgpu::Buffer,
-	pub texture_info: wgpu::BindGroup,
 }
 
 pub struct WgpuRenderTextures {
@@ -787,17 +774,8 @@ pub struct WgpuRenderTextures {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
 	pub position: [f32; 2],
-	pub tex_index: u32,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct TextureInfo {
-	pub tex_coords: [[f32; 2]; 4],
-	pub format: u32,
-	pub _padding_0: u32,
-	pub _padding_1: u32,
-	pub _padding_2: u32,
+	pub tex_coords: [f32; 2],
+	pub matte_tex_coords: [f32; 2],
 }
 
 #[repr(C)]
@@ -827,32 +805,29 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 
 	let texture_bind_group_layout =
 		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[wgpu::BindGroupLayoutEntry {
-				binding: 0,
-				visibility: wgpu::ShaderStages::FRAGMENT,
-				ty: wgpu::BindingType::Texture {
-					multisampled: false,
-					view_dimension: wgpu::TextureViewDimension::D2,
-					sample_type: wgpu::TextureSampleType::Float { filterable: true },
+			entries: &[
+				wgpu::BindGroupLayoutEntry {
+					binding: 0,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Texture {
+						multisampled: false,
+						view_dimension: wgpu::TextureViewDimension::D2,
+						sample_type: wgpu::TextureSampleType::Float { filterable: true },
+					},
+					count: None,
 				},
-				count: None,
-			}],
+				wgpu::BindGroupLayoutEntry {
+					binding: 1,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Buffer {
+						ty: wgpu::BufferBindingType::Uniform,
+						has_dynamic_offset: false,
+						min_binding_size: None,
+					},
+					count: None,
+				},
+			],
 			label: Some("Texture bind group layout"),
-		});
-
-	let texture_info_bind_group_layout =
-		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[wgpu::BindGroupLayoutEntry {
-				binding: 0,
-				visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-				ty: wgpu::BindingType::Buffer {
-					ty: wgpu::BufferBindingType::Uniform,
-					has_dynamic_offset: false,
-					min_binding_size: None,
-				},
-				count: None,
-			}],
-			label: Some("Texture info bind group layout"),
 		});
 
 	let video_bind_group_layout =
@@ -877,9 +852,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		bind_group_layouts: &[
 			&sampler_bind_group_layout,
 			&texture_bind_group_layout,
-			&texture_info_bind_group_layout,
 			&texture_bind_group_layout,
-			&texture_info_bind_group_layout,
 			&video_bind_group_layout,
 		],
 		push_constant_ranges: &[],
@@ -969,7 +942,8 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 				step_mode: wgpu::VertexStepMode::Vertex,
 				attributes: &wgpu::vertex_attr_array![
 					0 => Float32x2,
-					1 => Uint32,
+					1 => Float32x2,
+					2 => Float32x2,
 				],
 			}],
 			compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -1020,27 +994,33 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		contents: bytemuck::cast_slice(&[
 			Vertex {
 				position: [1.0, 1.0],
-				tex_index: 1,
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: [-1.0, -1.0],
-				tex_index: 2,
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: [1.0, -1.0],
-				tex_index: 3,
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: [-1.0, 1.0],
-				tex_index: 0,
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: [-1.0, -1.0],
-				tex_index: 2,
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
 				position: [1.0, 1.0],
-				tex_index: 3,
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
 			},
 		]),
 		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
@@ -1068,44 +1048,15 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		label: Some("Uniform bind group 0"),
 	});
 
-	let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-		address_mode_u: wgpu::AddressMode::ClampToEdge,
-		address_mode_v: wgpu::AddressMode::ClampToEdge,
-		address_mode_w: wgpu::AddressMode::ClampToEdge,
-		mag_filter: wgpu::FilterMode::Linear,
-		min_filter: wgpu::FilterMode::Linear,
-		mipmap_filter: wgpu::FilterMode::Nearest,
-		..Default::default()
-	});
-
 	let sampler = device.create_bind_group(&wgpu::BindGroupDescriptor {
 		layout: &sampler_bind_group_layout,
 		entries: &[wgpu::BindGroupEntry {
 			binding: 0,
-			resource: wgpu::BindingResource::Sampler(&sampler),
+			resource: wgpu::BindingResource::Sampler(
+				&device.create_sampler(&wgpu::SamplerDescriptor::default()),
+			),
 		}],
 		label: Some("Sampler bind group"),
-	});
-
-	let texture_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-		label: Some("Texture info buffer"),
-		contents: bytemuck::cast_slice(&[TextureInfo {
-			tex_coords: [[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]],
-			format: 0,
-			_padding_0: 0,
-			_padding_1: 0,
-			_padding_2: 0,
-		}]),
-		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
-	});
-
-	let texture_info = device.create_bind_group(&wgpu::BindGroupDescriptor {
-		layout: &texture_info_bind_group_layout,
-		entries: &[wgpu::BindGroupEntry {
-			binding: 0,
-			resource: texture_info_buffer.as_entire_binding(),
-		}],
-		label: Some("Texture info bind group"),
 	});
 
 	render_state
@@ -1117,12 +1068,9 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			pipeline_screen,
 			pipeline_add,
 			texture_bind_group_layout,
-			texture_info_bind_group_layout,
 			video_bind_group_layout,
 			vertex_buffer,
 			uniform_buffers: vec![(base_uniform_buffer, uniform_buffer_group)],
 			sampler,
-			texture_info_buffer,
-			texture_info,
 		});
 }

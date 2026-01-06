@@ -1,5 +1,6 @@
 use crate::app::TreeNode;
 use crate::txp::*;
+use cgmath::SquareMatrix;
 use eframe::egui;
 use eframe::egui::Widget;
 use eframe::egui_wgpu;
@@ -515,14 +516,14 @@ impl AetSceneNode {
 		let mut videos = WgpuAetVideos {
 			videos: Vec::new(),
 			sprites: BTreeMap::new(),
+			matte_sprites: Vec::new(),
 			viewport_size: [self.width as f32, self.height as f32],
 		};
 		videos.sprites.insert(
 			0,
 			WgpuAetSpriteInfo {
 				texture_index: 0,
-				texture_format: 0,
-				texture_coords: [0.0, 0.0, 0.0, 0.0],
+				texture_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
 			},
 		);
 
@@ -996,7 +997,7 @@ impl AetCompNode {
 								is_empty: true,
 								source_size: [video.width as f32, video.height as f32],
 								sprite_id: 0,
-								matte_sprite_id: 0,
+								matte_sprite_index: 0,
 								mat: m,
 								color: [
 									video.color[0] as f32 / 255.0,
@@ -1016,40 +1017,151 @@ impl AetCompNode {
 					let sprite = sprite.try_lock().unwrap();
 					let texture = sprite.texture.try_lock().unwrap();
 					let mip = texture.texture.get_mipmap(0, 0).unwrap();
-					let x = sprite.info.px() / mip.width() as f32;
-					let y = (mip.height() as f32 - sprite.info.py() - sprite.info.height())
-						/ mip.height() as f32;
-					let w = (sprite.info.px() + sprite.info.width()) / mip.width() as f32;
-					let h = (mip.height() as f32 - sprite.info.py()) / mip.height() as f32;
 					let db_entry = sprite.db_entry.as_ref().unwrap().try_lock().unwrap();
+
+					if matte.is_none()
+						&& let Some(video) = &layer.video
+						&& video.transfer_mode.matte != 0
+					{
+						matte = Some((
+							m,
+							sprite.info.px(),
+							sprite.info.py(),
+							mip.width() as f32,
+							mip.height() as f32,
+							sprite.info.texid() as usize,
+						));
+						continue;
+					}
+
+					let tl = [
+						(sprite.info.px()) / mip.width() as f32,
+						(mip.height() as f32 - (sprite.info.py())) / mip.height() as f32,
+					];
+					let bl = [
+						(sprite.info.px()) / mip.width() as f32,
+						(mip.height() as f32 - (sprite.info.height() + sprite.info.py()))
+							/ mip.height() as f32,
+					];
+					let br = [
+						(sprite.info.width() + sprite.info.px()) / mip.width() as f32,
+						(mip.height() as f32 - (sprite.info.height() + sprite.info.py()))
+							/ mip.height() as f32,
+					];
+					let tr = [
+						(sprite.info.width() + sprite.info.px()) / mip.width() as f32,
+						(mip.height() as f32 - (sprite.info.py())) / mip.height() as f32,
+					];
 
 					if !videos.sprites.contains_key(&db_entry.id) {
 						videos.sprites.insert(
 							db_entry.id,
 							WgpuAetSpriteInfo {
 								texture_index: sprite.info.texid() as usize,
-								texture_format: if texture.texture.is_ycbcr() { 1 } else { 0 },
-								texture_coords: [x, y, w, h],
+								texture_coords: [tl, tr, bl, br],
 							},
 						);
 					}
 
-					if matte.is_none()
-						&& let Some(video) = &layer.video
-						&& video.transfer_mode.matte != 0
-					{
-						matte = Some(db_entry.id);
-						continue;
-					}
+					let video = if let Some((m_mat, m_x, m_y, m_w, m_h, m_texid)) = matte {
+						let spr_info = WgpuAetSpriteInfo {
+							texture_index: sprite.info.texid() as usize,
+							texture_coords: [tl, tr, bl, br],
+						};
 
-					let video = if let Some(matte_sprite_id) = matte {
+						let vtx0 = Vec4 {
+							x: 0.0,
+							y: 0.0,
+							z: 0.0,
+							w: 0.0,
+						};
+						let vtx1 = Vec4 {
+							x: 0.0,
+							y: sprite.info.height(),
+							z: 0.0,
+							w: 0.0,
+						};
+						let vtx2 = Vec4 {
+							x: sprite.info.width(),
+							y: sprite.info.height(),
+							z: 0.0,
+							w: 0.0,
+						};
+						let vtx3 = Vec4 {
+							x: sprite.info.width(),
+							y: 0.0,
+							z: 0.0,
+							w: 0.0,
+						};
+
+						let vtx0 = m.x * vtx0.x + m.y * vtx0.y + m.z * vtx0.z + m.w;
+						let vtx1 = m.x * vtx1.x + m.y * vtx1.y + m.z * vtx1.z + m.w;
+						let vtx2 = m.x * vtx2.x + m.y * vtx2.y + m.z * vtx2.z + m.w;
+						let vtx3 = m.x * vtx3.x + m.y * vtx3.y + m.z * vtx3.z + m.w;
+
+						// lazy
+						let m_mat = cgmath::Matrix4::new(
+							m_mat.x.x, m_mat.x.y, m_mat.x.z, m_mat.x.w, m_mat.y.x, m_mat.y.y,
+							m_mat.y.z, m_mat.y.w, m_mat.z.x, m_mat.z.y, m_mat.z.z, m_mat.z.w,
+							m_mat.w.x, m_mat.w.y, m_mat.w.z, m_mat.w.w,
+						);
+						let m_mat = m_mat.invert().unwrap();
+						let m_mat = Mat4 {
+							x: Vec4 {
+								x: m_mat.x.x,
+								y: m_mat.x.y,
+								z: m_mat.x.z,
+								w: m_mat.x.w,
+							},
+							y: Vec4 {
+								x: m_mat.y.x,
+								y: m_mat.y.y,
+								z: m_mat.y.z,
+								w: m_mat.y.w,
+							},
+							z: Vec4 {
+								x: m_mat.z.x,
+								y: m_mat.z.y,
+								z: m_mat.z.z,
+								w: m_mat.z.w,
+							},
+							w: Vec4 {
+								x: m_mat.w.x,
+								y: m_mat.w.y,
+								z: m_mat.w.z,
+								w: m_mat.w.w,
+							},
+						};
+
+						let m_vtx0 =
+							m_mat.x * vtx0.x + m_mat.y * vtx0.y + m_mat.z * vtx0.z + m_mat.w;
+						let m_vtx1 =
+							m_mat.x * vtx1.x + m_mat.y * vtx1.y + m_mat.z * vtx1.z + m_mat.w;
+						let m_vtx2 =
+							m_mat.x * vtx2.x + m_mat.y * vtx2.y + m_mat.z * vtx2.z + m_mat.w;
+						let m_vtx3 =
+							m_mat.x * vtx3.x + m_mat.y * vtx3.y + m_mat.z * vtx3.z + m_mat.w;
+
+						let tl = [(m_vtx0.x + m_x) / m_w, (m_h - (m_vtx0.y + m_y)) / m_h];
+						let bl = [(m_vtx1.x + m_x) / m_w, (m_h - (m_vtx1.y + m_y)) / m_h];
+						let br = [(m_vtx2.x + m_x) / m_w, (m_h - (m_vtx2.y + m_y)) / m_h];
+						let tr = [(m_vtx3.x + m_x) / m_w, (m_h - (m_vtx3.y + m_y)) / m_h];
+
+						videos.matte_sprites.push((
+							spr_info,
+							WgpuAetSpriteInfo {
+								texture_index: m_texid,
+								texture_coords: [tl, tr, bl, br],
+							},
+						));
+
 						matte = None;
 						WgpuAetVideo {
 							has_matte: true,
 							is_empty: false,
-							source_size: [video.width as f32, video.height as f32],
+							source_size: [sprite.info.width(), sprite.info.height()],
 							sprite_id: db_entry.id,
-							matte_sprite_id,
+							matte_sprite_index: videos.matte_sprites.len() - 1,
 							mat: m,
 							color: [1.0, 1.0, 1.0, opacity],
 							blend_mode: layer
@@ -1061,9 +1173,9 @@ impl AetCompNode {
 						WgpuAetVideo {
 							has_matte: false,
 							is_empty: false,
-							source_size: [video.width as f32, video.height as f32],
+							source_size: [sprite.info.width(), sprite.info.height()],
 							sprite_id: db_entry.id,
-							matte_sprite_id: 0,
+							matte_sprite_index: 0,
 							mat: m,
 							color: [1.0, 1.0, 1.0, opacity],
 							blend_mode: layer
@@ -1131,7 +1243,7 @@ impl AetCompNode {
 					is_empty: true,
 					source_size: [1.0, 1.0],
 					sprite_id: 0,
-					matte_sprite_id: 0,
+					matte_sprite_index: 0,
 					mat: m * top,
 					color: [1.0, 1.0, 1.0, 1.0],
 					blend_mode: aet::BlendMode::Add,
@@ -1168,7 +1280,7 @@ impl AetCompNode {
 					is_empty: true,
 					source_size: [1.0, 1.0],
 					sprite_id: 0,
-					matte_sprite_id: 0,
+					matte_sprite_index: 0,
 					mat: m * bottom,
 					color: [1.0, 1.0, 1.0, 1.0],
 					blend_mode: aet::BlendMode::Add,
@@ -1205,7 +1317,7 @@ impl AetCompNode {
 					is_empty: true,
 					source_size: [1.0, 1.0],
 					sprite_id: 0,
-					matte_sprite_id: 0,
+					matte_sprite_index: 0,
 					mat: m * left,
 					color: [1.0, 1.0, 1.0, 1.0],
 					blend_mode: aet::BlendMode::Add,
@@ -1242,7 +1354,7 @@ impl AetCompNode {
 					is_empty: true,
 					source_size: [1.0, 1.0],
 					sprite_id: 0,
-					matte_sprite_id: 0,
+					matte_sprite_index: 0,
 					mat: m * right,
 					color: [1.0, 1.0, 1.0, 1.0],
 					blend_mode: aet::BlendMode::Add,
@@ -2634,6 +2746,7 @@ struct WgpuAetVideos {
 	viewport_size: [f32; 2],
 	videos: Vec<WgpuAetVideo>,
 	sprites: BTreeMap<u32, WgpuAetSpriteInfo>,
+	matte_sprites: Vec<(WgpuAetSpriteInfo, WgpuAetSpriteInfo)>,
 }
 
 struct WgpuAetVideo {
@@ -2642,19 +2755,19 @@ struct WgpuAetVideo {
 	blend_mode: aet::BlendMode,
 	source_size: [f32; 2],
 	sprite_id: u32,
-	matte_sprite_id: u32,
+	matte_sprite_index: usize,
 	mat: Mat4,
 	color: [f32; 4],
 }
 
 struct WgpuAetSpriteInfo {
 	texture_index: usize,
-	texture_format: u32,
-	texture_coords: [f32; 4],
+	texture_coords: [[f32; 2]; 4],
 }
 
 struct WgpuSpriteInfos {
-	sprites: BTreeMap<u32, (wgpu::Buffer, wgpu::BindGroup)>,
+	sprites: BTreeMap<u32, wgpu::Buffer>,
+	matte_sprites: Vec<wgpu::Buffer>,
 }
 
 impl egui_wgpu::CallbackTrait for WgpuAetVideos {
@@ -2669,52 +2782,116 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		if callback_resources.get::<WgpuSpriteInfos>().is_none() {
 			callback_resources.insert(WgpuSpriteInfos {
 				sprites: BTreeMap::new(),
+				matte_sprites: Vec::new(),
 			});
 		}
 
-		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
-		let texture_info_bind_group_layout = resources.texture_info_bind_group_layout.clone();
 		let wgpu_sprite_infos: &mut WgpuSpriteInfos = callback_resources.get_mut().unwrap();
+		let (tl, tr, bl, br) = ([-1.0, 1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, -1.0]);
 		for (id, sprite) in self.sprites.iter().map(|(id, sprite)| {
 			(
 				id,
-				TextureInfo {
-					tex_coords: [
-						[sprite.texture_coords[0], sprite.texture_coords[3]],
-						[sprite.texture_coords[2], sprite.texture_coords[3]],
-						[sprite.texture_coords[0], sprite.texture_coords[1]],
-						[sprite.texture_coords[2], sprite.texture_coords[1]],
-					],
-					format: sprite.texture_format,
-					_padding_0: 0,
-					_padding_1: 0,
-					_padding_2: 0,
-				},
+				[
+					Vertex {
+						position: tr,
+						tex_coords: sprite.texture_coords[1],
+						matte_tex_coords: [0.0, 0.0],
+					},
+					Vertex {
+						position: bl,
+						tex_coords: sprite.texture_coords[2],
+						matte_tex_coords: [0.0, 0.0],
+					},
+					Vertex {
+						position: br,
+						tex_coords: sprite.texture_coords[3],
+						matte_tex_coords: [0.0, 0.0],
+					},
+					Vertex {
+						position: tl,
+						tex_coords: sprite.texture_coords[0],
+						matte_tex_coords: [0.0, 0.0],
+					},
+					Vertex {
+						position: bl,
+						tex_coords: sprite.texture_coords[2],
+						matte_tex_coords: [0.0, 0.0],
+					},
+					Vertex {
+						position: tr,
+						tex_coords: sprite.texture_coords[1],
+						matte_tex_coords: [0.0, 0.0],
+					},
+				],
 			)
 		}) {
 			if !wgpu_sprite_infos.sprites.contains_key(id) {
 				let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-					label: Some(&format!("Texture info buffer {id}")),
-					size: std::mem::size_of::<TextureInfo>() as wgpu::BufferAddress,
-					usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+					label: Some(&format!("Vertex buffer {id}")),
+					size: std::mem::size_of::<Vertex>() as wgpu::BufferAddress * 6,
+					usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
 					mapped_at_creation: false,
 				});
-
-				let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-					layout: &texture_info_bind_group_layout,
-					entries: &[wgpu::BindGroupEntry {
-						binding: 0,
-						resource: buffer.as_entire_binding(),
-					}],
-					label: Some(&format!("Texture info bind group {id}")),
-				});
-				wgpu_sprite_infos.sprites.insert(*id, (buffer, bind_group));
+				wgpu_sprite_infos.sprites.insert(*id, buffer);
 			}
 
 			queue.write_buffer(
-				&wgpu_sprite_infos.sprites.get(id).unwrap().0,
+				&wgpu_sprite_infos.sprites.get(id).unwrap(),
 				0,
-				bytemuck::cast_slice(&[sprite]),
+				bytemuck::cast_slice(&sprite),
+			);
+		}
+
+		for i in wgpu_sprite_infos.matte_sprites.len()..self.matte_sprites.len() {
+			let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+				label: Some(&format!("Matte Vertex buffer {i}")),
+				size: std::mem::size_of::<Vertex>() as wgpu::BufferAddress * 6,
+				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+				mapped_at_creation: false,
+			});
+			wgpu_sprite_infos.matte_sprites.push(buffer);
+		}
+
+		for ((base, matte), buffer) in self
+			.matte_sprites
+			.iter()
+			.zip(wgpu_sprite_infos.matte_sprites.iter_mut())
+		{
+			queue.write_buffer(
+				&buffer,
+				0,
+				bytemuck::cast_slice(&[
+					Vertex {
+						position: tr,
+						tex_coords: base.texture_coords[1],
+						matte_tex_coords: matte.texture_coords[1],
+					},
+					Vertex {
+						position: bl,
+						tex_coords: base.texture_coords[2],
+						matte_tex_coords: matte.texture_coords[2],
+					},
+					Vertex {
+						position: br,
+						tex_coords: base.texture_coords[3],
+						matte_tex_coords: matte.texture_coords[3],
+					},
+					Vertex {
+						position: tl,
+						tex_coords: base.texture_coords[0],
+						matte_tex_coords: matte.texture_coords[0],
+					},
+					Vertex {
+						position: bl,
+						tex_coords: base.texture_coords[2],
+						matte_tex_coords: matte.texture_coords[2],
+					},
+					Vertex {
+						position: tr,
+						tex_coords: base.texture_coords[1],
+						matte_tex_coords: matte.texture_coords[1],
+					},
+				]),
 			);
 		}
 
@@ -2819,19 +2996,14 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		let textures: &WgpuRenderTextures = callback_resources.get().unwrap();
 		let sprites: &WgpuSpriteInfos = callback_resources.get().unwrap();
 
-		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-
 		// Draw black base
 		render_pass.set_pipeline(&resources.pipeline_normal);
 		render_pass.set_bind_group(0, &resources.sampler, &[]);
 		render_pass.set_bind_group(1, &textures.empty_texture, &[]);
-		render_pass.set_bind_group(2, &resources.texture_info, &[]);
-		render_pass.set_bind_group(3, &textures.empty_texture, &[]);
-		render_pass.set_bind_group(4, &resources.texture_info, &[]);
-		render_pass.set_bind_group(5, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_bind_group(2, &textures.empty_texture, &[]);
+		render_pass.set_bind_group(3, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
-
-		let mut empty_matte_set = true;
 
 		for (i, video) in self.videos.iter().enumerate() {
 			match video.blend_mode {
@@ -2842,41 +3014,33 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 
 			if video.is_empty {
 				render_pass.set_bind_group(1, &textures.empty_texture, &[]);
-				render_pass.set_bind_group(2, &resources.texture_info, &[]);
-			} else {
-				let sprite = self.sprites.get(&video.sprite_id).unwrap();
+				render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
+			} else if video.has_matte {
+				let (base, matte) = &self.matte_sprites[video.matte_sprite_index];
 				render_pass.set_bind_group(
 					1,
-					&textures.fragment_bind_group[sprite.texture_index].1,
+					&textures.fragment_bind_group[base.texture_index].1,
 					&[],
 				);
 				render_pass.set_bind_group(
 					2,
-					&sprites.sprites.get(&video.sprite_id).unwrap().1,
+					&textures.fragment_bind_group[matte.texture_index].1,
 					&[],
 				);
+				render_pass.set_vertex_buffer(
+					0,
+					sprites.matte_sprites[video.matte_sprite_index].slice(..),
+				);
+			} else {
+				render_pass.set_bind_group(
+					1,
+					&textures.fragment_bind_group[self.sprites[&video.sprite_id].texture_index].1,
+					&[],
+				);
+				render_pass.set_vertex_buffer(0, sprites.sprites[&video.sprite_id].slice(..));
 			}
 
-			if video.has_matte {
-				let sprite = self.sprites.get(&video.matte_sprite_id).unwrap();
-				render_pass.set_bind_group(
-					3,
-					&textures.fragment_bind_group[sprite.texture_index].1,
-					&[],
-				);
-				render_pass.set_bind_group(
-					4,
-					&sprites.sprites.get(&video.matte_sprite_id).unwrap().1,
-					&[],
-				);
-				empty_matte_set = false;
-			} else if !empty_matte_set {
-				render_pass.set_bind_group(3, &textures.empty_texture, &[]);
-				render_pass.set_bind_group(4, &resources.texture_info, &[]);
-				empty_matte_set = true;
-			}
-
-			render_pass.set_bind_group(5, &resources.uniform_buffers[i + 1].1, &[]);
+			render_pass.set_bind_group(3, &resources.uniform_buffers[i + 1].1, &[]);
 			render_pass.draw(0..6, 0..1);
 		}
 	}

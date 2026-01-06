@@ -10,6 +10,7 @@ use kkdlib::spr;
 use regex::Regex;
 use std::rc::Rc;
 use std::sync::*;
+use wgpu::util::DeviceExt;
 
 pub struct SpriteSetNode {
 	pub name: String,
@@ -254,41 +255,6 @@ impl SpriteSetNode {
 		let callback_resources = render_state.renderer.read();
 		let resources: &WgpuRenderResources = callback_resources.callback_resources.get().unwrap();
 
-		let (tl, tr, bl, br) = ([-1.0, 1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, -1.0]);
-
-		let verticies = [
-			Vertex {
-				position: tr,
-				tex_index: 1,
-			},
-			Vertex {
-				position: bl,
-				tex_index: 2,
-			},
-			Vertex {
-				position: br,
-				tex_index: 3,
-			},
-			Vertex {
-				position: tl,
-				tex_index: 0,
-			},
-			Vertex {
-				position: bl,
-				tex_index: 2,
-			},
-			Vertex {
-				position: tr,
-				tex_index: 1,
-			},
-		];
-
-		render_state.queue.write_buffer(
-			&resources.vertex_buffer,
-			0,
-			bytemuck::cast_slice(&verticies),
-		);
-
 		let empty_texture = device.create_texture(&wgpu::TextureDescriptor {
 			size: wgpu::Extent3d {
 				width: 1,
@@ -469,26 +435,55 @@ impl SpriteSetNode {
 				texture
 			};
 
+			let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+				label: None,
+				contents: bytemuck::cast_slice(&[
+					if tex.texture.is_ycbcr() { 1 } else { 0 },
+					0,
+					0,
+					0,
+				]),
+				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+			});
+
 			let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
 				layout: &resources.texture_bind_group_layout,
-				entries: &[wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(
-						&texture.create_view(&wgpu::TextureViewDescriptor::default()),
-					),
-				}],
+				entries: &[
+					wgpu::BindGroupEntry {
+						binding: 0,
+						resource: wgpu::BindingResource::TextureView(
+							&texture.create_view(&wgpu::TextureViewDescriptor::default()),
+						),
+					},
+					wgpu::BindGroupEntry {
+						binding: 1,
+						resource: buffer.as_entire_binding(),
+					},
+				],
 				label: Some("Fragment bind group"),
 			});
 
 			textures.push((texture, bind_group));
 		}
 
+		let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: None,
+			contents: bytemuck::cast_slice(&[0, 0, 0, 0]),
+			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+		});
+
 		let empty_texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
 			layout: &resources.texture_bind_group_layout,
-			entries: &[wgpu::BindGroupEntry {
-				binding: 0,
-				resource: wgpu::BindingResource::TextureView(&empty_view),
-			}],
+			entries: &[
+				wgpu::BindGroupEntry {
+					binding: 0,
+					resource: wgpu::BindingResource::TextureView(&empty_view),
+				},
+				wgpu::BindGroupEntry {
+					binding: 1,
+					resource: buffer.as_entire_binding(),
+				},
+			],
 			label: Some("Fragment bind group"),
 		});
 
@@ -1025,7 +1020,6 @@ impl TreeNode for SpriteInfoNode {
 			rect,
 			WgpuSpriteCallback {
 				sprite_coords: [x, y, w, h],
-				texture_format: if texture.texture.is_ycbcr() { 1 } else { 0 },
 				texture_index: texture.index,
 			},
 		))
@@ -1034,7 +1028,6 @@ impl TreeNode for SpriteInfoNode {
 
 struct WgpuSpriteCallback {
 	sprite_coords: [f32; 4],
-	texture_format: u32,
 	texture_index: u32,
 }
 
@@ -1064,23 +1057,45 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 			bytemuck::cast_slice(&[spr_info]),
 		);
 
-		let tex_info = TextureInfo {
-			tex_coords: [
-				[self.sprite_coords[0], self.sprite_coords[3]],
-				[self.sprite_coords[2], self.sprite_coords[3]],
-				[self.sprite_coords[0], self.sprite_coords[1]],
-				[self.sprite_coords[2], self.sprite_coords[1]],
-			],
-			format: self.texture_format,
-			_padding_0: 0,
-			_padding_1: 0,
-			_padding_2: 0,
-		};
+		let (tl, tr, bl, br) = ([-1.0, 1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, -1.0]);
+
+		let verticies = [
+			Vertex {
+				position: tr,
+				tex_coords: [self.sprite_coords[2], self.sprite_coords[3]],
+				matte_tex_coords: [0.0, 0.0],
+			},
+			Vertex {
+				position: bl,
+				tex_coords: [self.sprite_coords[0], self.sprite_coords[1]],
+				matte_tex_coords: [0.0, 0.0],
+			},
+			Vertex {
+				position: br,
+				tex_coords: [self.sprite_coords[2], self.sprite_coords[1]],
+				matte_tex_coords: [0.0, 0.0],
+			},
+			Vertex {
+				position: tl,
+				tex_coords: [self.sprite_coords[0], self.sprite_coords[3]],
+				matte_tex_coords: [0.0, 0.0],
+			},
+			Vertex {
+				position: bl,
+				tex_coords: [self.sprite_coords[0], self.sprite_coords[1]],
+				matte_tex_coords: [0.0, 0.0],
+			},
+			Vertex {
+				position: tr,
+				tex_coords: [self.sprite_coords[2], self.sprite_coords[3]],
+				matte_tex_coords: [0.0, 0.0],
+			},
+		];
 
 		queue.write_buffer(
-			&&resources.texture_info_buffer,
+			&resources.vertex_buffer,
 			0,
-			bytemuck::cast_slice(&[tex_info]),
+			bytemuck::cast_slice(&verticies),
 		);
 
 		Vec::new()
@@ -1101,10 +1116,8 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 			&texture.fragment_bind_group[self.texture_index as usize].1,
 			&[],
 		);
-		render_pass.set_bind_group(2, &resources.texture_info, &[]);
-		render_pass.set_bind_group(3, &texture.empty_texture, &[]);
-		render_pass.set_bind_group(4, &resources.texture_info, &[]);
-		render_pass.set_bind_group(5, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_bind_group(2, &texture.empty_texture, &[]);
+		render_pass.set_bind_group(3, &resources.uniform_buffers[0].1, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
 	}
