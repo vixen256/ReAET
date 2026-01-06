@@ -2068,9 +2068,9 @@ impl TreeNode for AetLayerNode {
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
 		if let AetItemNode::Comp(comp) = &mut self.item {
 			if ui.button("Add").clicked() {
-				comp.layers.push(Rc::new(Mutex::new(Self::create_with_item(
-					AetItemNode::None,
-				))));
+				let mut layer = Self::create_with_item(AetItemNode::None);
+				layer.sprites = self.sprites.clone();
+				comp.layers.push(Rc::new(Mutex::new(layer)));
 			}
 		};
 
