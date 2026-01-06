@@ -179,11 +179,11 @@ impl LayerUndoer {
 
 				if !last_update.deep_eq(&comp) {
 					*time = current_time;
-					*last_update = comp.deep_clone();
+					*last_update = comp.mid_clone();
 				} else if current_time >= *time + 1.0 {
 					self.add_undo(self.original_layer.clone(), self.current_path.clone());
 					self.original_layer = aet::AetLayerNode::create_with_item(
-						aet::AetItemNode::Comp(comp.deep_clone()),
+						aet::AetItemNode::Comp(comp.mid_clone()),
 					);
 				}
 			} else {
@@ -195,7 +195,7 @@ impl LayerUndoer {
 					self.flux = Some((
 						current_time,
 						aet::AetLayerNode::create_with_item(aet::AetItemNode::Comp(
-							comp.deep_clone(),
+							comp.mid_clone(),
 						)),
 					));
 				}
@@ -206,7 +206,7 @@ impl LayerUndoer {
 			}
 			self.current_path = selected.to_vec();
 			self.original_layer =
-				aet::AetLayerNode::create_with_item(aet::AetItemNode::Comp(comp.deep_clone()));
+				aet::AetLayerNode::create_with_item(aet::AetItemNode::Comp(comp.mid_clone()));
 		}
 	}
 }

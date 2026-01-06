@@ -420,7 +420,11 @@ impl TreeNode for AetSceneNode {
 			.map(|(i, _)| i)
 			.collect::<Vec<_>>()
 		{
-			self.root.layers.insert(i, self.root.layers[i].clone());
+			let mut cloned = self.root.layers[i].try_lock().unwrap().clone();
+			if let AetItemNode::Comp(comp) = &cloned.item {
+				cloned.item = AetItemNode::Comp(comp.deep_clone());
+			}
+			self.root.layers.insert(i, Rc::new(Mutex::new(cloned)));
 		}
 
 		for layer in &mut self.root.layers {
@@ -1438,12 +1442,29 @@ impl AetCompNode {
 				.all(|(a, b)| *a.try_lock().unwrap() == *b.try_lock().unwrap())
 	}
 
-	pub fn deep_clone(&self) -> Self {
+	// One layer deep clone
+	pub fn mid_clone(&self) -> Self {
 		Self {
 			layers: self
 				.layers
 				.iter()
 				.map(|layer| Rc::new(Mutex::new(layer.try_lock().unwrap().clone())))
+				.collect(),
+		}
+	}
+
+	pub fn deep_clone(&self) -> Self {
+		Self {
+			layers: self
+				.layers
+				.iter()
+				.map(|layer| {
+					let mut clone = layer.try_lock().unwrap().clone();
+					if let AetItemNode::Comp(comp) = &clone.item {
+						clone.item = AetItemNode::Comp(comp.deep_clone());
+					}
+					Rc::new(Mutex::new(clone))
+				})
 				.collect(),
 		}
 	}
@@ -1612,7 +1633,11 @@ impl TreeNode for AetLayerNode {
 								.map(|(i, _)| i)
 								.collect::<Vec<_>>()
 							{
-								comp.layers.insert(i, comp.layers[i].clone());
+								let mut cloned = comp.layers[i].try_lock().unwrap().clone();
+								if let AetItemNode::Comp(comp) = &cloned.item {
+									cloned.item = AetItemNode::Comp(comp.deep_clone());
+								}
+								comp.layers.insert(i, Rc::new(Mutex::new(cloned)));
 							}
 
 							for layer in &mut comp.layers {
