@@ -72,15 +72,24 @@ fn sample(tex: texture_2d<f32>, coords: vec2<f32>, texture_format: u32) -> vec4<
 	}
 }
 
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn get_color(in: VertexOutput) -> vec4<f32> {
 	if video.has_matte == 0 {
 		return sample(Texture, in.tex_coords, TextureFormat) * video.color;
 	} else {
 		var base = sample(Texture, in.tex_coords, TextureFormat);
 		var color = sample(MatteTexture, in.matte_tex_coords, MatteTextureFormat);
-		//var color = vec4(in.matte_tex_coords, 0.0, 1.0);
 		color.w *= base.w;
 		return color * video.color;
 	}
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+	return get_color(in);
+}
+
+@fragment
+fn fs_main_multiply(in: VertexOutput) -> @location(0) vec4<f32> {
+	var color = get_color(in);
+	return vec4((color.xyz - 1.0) * color.w + 1.0, color.w);
 }

@@ -281,6 +281,7 @@ impl AetSetNode {
 
 					selected_curve: None,
 					gizmo: Gizmo::default(),
+					background_color: [0.0, 0.0, 0.0],
 				}
 			})
 			.collect();
@@ -314,6 +315,7 @@ pub struct AetSceneNode {
 
 	pub selected_curve: Option<CurveType>,
 	pub gizmo: Gizmo,
+	pub background_color: [f32; 3],
 }
 
 impl PartialEq for AetSceneNode {
@@ -479,6 +481,15 @@ impl TreeNode for AetSceneNode {
 						crate::app::num_edit(ui, &mut self.height, 0);
 					});
 				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("Background color");
+					});
+					row.col(|ui| {
+						ui.color_edit_button_rgb(&mut self.background_color);
+					});
+				});
 			});
 	}
 
@@ -518,6 +529,7 @@ impl AetSceneNode {
 			sprites: BTreeMap::new(),
 			matte_sprites: Vec::new(),
 			viewport_size: [self.width as f32, self.height as f32],
+			background_color: self.background_color,
 		};
 		videos.sprites.insert(
 			0,
@@ -2744,6 +2756,7 @@ pub struct AetAudioNode {
 
 struct WgpuAetVideos {
 	viewport_size: [f32; 2],
+	background_color: [f32; 3],
 	videos: Vec<WgpuAetVideo>,
 	sprites: BTreeMap<u32, WgpuAetSpriteInfo>,
 	matte_sprites: Vec<(WgpuAetSpriteInfo, WgpuAetSpriteInfo)>,
@@ -2899,7 +2912,12 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 
 		video_infos.push(VideoInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			color: [0.0, 0.0, 0.0, 1.0],
+			color: [
+				self.background_color[0],
+				self.background_color[1],
+				self.background_color[2],
+				1.0,
+			],
 			has_matte: 0,
 			_padding_0: 0,
 			_padding_1: 0,
@@ -3009,6 +3027,7 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			match video.blend_mode {
 				aet::BlendMode::Screen => render_pass.set_pipeline(&resources.pipeline_screen),
 				aet::BlendMode::Add => render_pass.set_pipeline(&resources.pipeline_add),
+				aet::BlendMode::Multiply => render_pass.set_pipeline(&resources.pipeline_multiply),
 				_ => render_pass.set_pipeline(&resources.pipeline_normal),
 			}
 

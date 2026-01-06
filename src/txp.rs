@@ -757,7 +757,8 @@ pub struct WgpuRenderResources {
 	pub pipeline_normal: wgpu::RenderPipeline,
 	pub pipeline_screen: wgpu::RenderPipeline,
 	pub pipeline_add: wgpu::RenderPipeline,
-	// Multiply and overlay currently unimplemented
+	pub pipeline_multiply: wgpu::RenderPipeline,
+	// Overlay currently unimplemented
 	pub texture_bind_group_layout: wgpu::BindGroupLayout,
 	pub video_bind_group_layout: wgpu::BindGroupLayout,
 	pub sampler: wgpu::BindGroup,
@@ -897,8 +898,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		},
 	};
 
-	// Combiner 1
-	let _multiply_blend_mode = wgpu::BlendState {
+	let multiply_blend_mode = wgpu::BlendState {
 		color: wgpu::BlendComponent {
 			src_factor: wgpu::BlendFactor::Dst,
 			dst_factor: wgpu::BlendFactor::Zero,
@@ -989,6 +989,14 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 
 	let pipeline_add = device.create_render_pipeline(&pipeline_desc);
 
+	target.blend = Some(multiply_blend_mode);
+	let target_arr = [Some(target.clone())];
+	pipeline_desc.fragment.as_mut().unwrap().entry_point = Some("fs_main_multiply");
+	pipeline_desc.fragment.as_mut().unwrap().targets = &target_arr;
+	pipeline_desc.label = Some("Multiply blend mode");
+
+	let pipeline_multiply = device.create_render_pipeline(&pipeline_desc);
+
 	let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 		label: Some("Vertex buffer"),
 		contents: bytemuck::cast_slice(&[
@@ -1052,9 +1060,13 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		layout: &sampler_bind_group_layout,
 		entries: &[wgpu::BindGroupEntry {
 			binding: 0,
-			resource: wgpu::BindingResource::Sampler(
-				&device.create_sampler(&wgpu::SamplerDescriptor::default()),
-			),
+			resource: wgpu::BindingResource::Sampler(&device.create_sampler(
+				&wgpu::SamplerDescriptor {
+					mag_filter: wgpu::FilterMode::Linear,
+					min_filter: wgpu::FilterMode::Linear,
+					..Default::default()
+				},
+			)),
 		}],
 		label: Some("Sampler bind group"),
 	});
@@ -1067,6 +1079,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			pipeline_normal,
 			pipeline_screen,
 			pipeline_add,
+			pipeline_multiply,
 			texture_bind_group_layout,
 			video_bind_group_layout,
 			vertex_buffer,
