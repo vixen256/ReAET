@@ -763,17 +763,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "directxtex"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f0cea4cfe7ef3eeeae77cbbe6c8eddb7e518b1af877ca788b7a9d4fde45e658"
-dependencies = [
- "bitflags 2.10.0",
- "cc",
- "winresult",
-]
-
-[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1935,7 +1924,6 @@ dependencies = [
  "bitflags 2.10.0",
  "block_compression",
  "cc",
- "directxtex",
  "image",
  "libdeflate-sys",
  "wgpu",
@@ -4637,24 +4625,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a5364e9d77fcdeeaa6062ced926ee3381faa2ee02d3eb83a5c27a8825540829"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "winresult"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fe1d4015321f3df114e73ccc695d62c1566b33b0a2d03d553b7dd65dc11f58d"
-dependencies = [
- "winresult-types",
-]
-
-[[package]]
-name = "winresult-types"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7314fd4ed99b7cc41081400f5d072919967e7382d358bc9e7d72bdd1955e1e8"
-dependencies = [
- "bytemuck",
 ]
 
 [[package]]

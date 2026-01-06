@@ -8,7 +8,6 @@ use eframe::egui_wgpu::wgpu;
 use image::{EncodableLayout, GenericImage};
 use kkdlib::spr;
 use regex::Regex;
-use std::collections::*;
 use std::rc::Rc;
 use std::sync::*;
 
@@ -471,23 +470,13 @@ impl SpriteSetNode {
 			};
 
 			let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-				layout: &resources.fragment_bind_group_layout,
-				entries: &[
-					wgpu::BindGroupEntry {
-						binding: 0,
-						resource: wgpu::BindingResource::TextureView(
-							&texture.create_view(&wgpu::TextureViewDescriptor::default()),
-						),
-					},
-					wgpu::BindGroupEntry {
-						binding: 1,
-						resource: wgpu::BindingResource::TextureView(&empty_view),
-					},
-					wgpu::BindGroupEntry {
-						binding: 2,
-						resource: wgpu::BindingResource::Sampler(&resources.sampler),
-					},
-				],
+				layout: &resources.texture_bind_group_layout,
+				entries: &[wgpu::BindGroupEntry {
+					binding: 0,
+					resource: wgpu::BindingResource::TextureView(
+						&texture.create_view(&wgpu::TextureViewDescriptor::default()),
+					),
+				}],
 				label: Some("Fragment bind group"),
 			});
 
@@ -495,21 +484,11 @@ impl SpriteSetNode {
 		}
 
 		let empty_texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &resources.fragment_bind_group_layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&empty_view),
-				},
-				wgpu::BindGroupEntry {
-					binding: 1,
-					resource: wgpu::BindingResource::TextureView(&empty_view),
-				},
-				wgpu::BindGroupEntry {
-					binding: 2,
-					resource: wgpu::BindingResource::Sampler(&resources.sampler),
-				},
-			],
+			layout: &resources.texture_bind_group_layout,
+			entries: &[wgpu::BindGroupEntry {
+				binding: 0,
+				resource: wgpu::BindingResource::TextureView(&empty_view),
+			}],
 			label: Some("Fragment bind group"),
 		});
 
@@ -522,14 +501,6 @@ impl SpriteSetNode {
 			.insert(WgpuRenderTextures {
 				fragment_bind_group: textures,
 				empty_texture,
-			});
-
-		render_state
-			.renderer
-			.write()
-			.callback_resources
-			.insert(WgpuMatteTextures {
-				matte_bind_groups: BTreeMap::new(),
 			});
 	}
 }
@@ -671,15 +642,8 @@ impl SpriteInfoNode {
 		let rgba = if texture.texture.is_ycbcr() {
 			texture.texture.decode_ycbcr()
 		} else {
-			#[cfg(feature = "directxtex")]
-			{
-				mip.rgba()
-			}
-			#[cfg(not(feature = "directxtex"))]
-			{
-				let render_state = &frame.wgpu_render_state().unwrap();
-				mip.to_rgba_gpu(&render_state.device, &render_state.queue)
-			}
+			let render_state = &frame.wgpu_render_state().unwrap();
+			mip.to_rgba_gpu(&render_state.device, &render_state.queue)
 		};
 		let Some(rgba) = rgba else {
 			self.error = Some(String::from("Failed to convert current texture to RGBA"));
@@ -702,79 +666,40 @@ impl SpriteInfoNode {
 		}
 
 		if texture.texture.is_ycbcr() {
-			#[cfg(feature = "directxtex")]
-			{
-				let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
-					image.width() as i32,
-					image.height() as i32,
-					image.as_bytes(),
-				) else {
-					self.error = Some(String::from("Could not encode image"));
-					return;
-				};
-				texture.texture = tex;
-				texture.texture_updated = true;
-			}
-			#[cfg(not(feature = "directxtex"))]
-			{
-				let render_state = &frame.wgpu_render_state().unwrap();
-				let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
-					image.width(),
-					image.height(),
-					image.as_bytes(),
-					&render_state.device,
-					&render_state.queue,
-				) else {
-					self.error = Some(String::from("Could not encode image"));
-					return;
-				};
-				texture.texture = tex;
-				texture.texture_updated = true;
-			}
+			let render_state = &frame.wgpu_render_state().unwrap();
+			let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
+				image.width(),
+				image.height(),
+				image.as_bytes(),
+				&render_state.device,
+				&render_state.queue,
+			) else {
+				self.error = Some(String::from("Could not encode image"));
+				return;
+			};
+			texture.texture = tex;
+			texture.texture_updated = true;
 		} else {
-			#[cfg(feature = "directxtex")]
-			{
-				let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba(
-					image.width() as i32,
-					image.height() as i32,
-					image.as_bytes(),
-					mip.format(),
-				) else {
-					self.error = Some(String::from("Could not encode texture"));
-					return;
-				};
+			let render_state = &frame.wgpu_render_state().unwrap();
+			let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
+				image.width() as i32,
+				image.height() as i32,
+				image.as_bytes(),
+				mip.format(),
+				&render_state.device,
+				&render_state.queue,
+			) else {
+				self.error = Some(String::from("Could not encode texture"));
+				return;
+			};
 
-				let mut tex = kkdlib::txp::Texture::new();
-				tex.set_has_cube_map(false);
-				tex.set_array_size(1);
-				tex.set_mipmaps_count(1);
-				tex.add_mipmap(&mipmap);
-				texture.texture = tex;
-				texture.texture_updated = true;
-			}
-			#[cfg(not(feature = "directxtex"))]
-			{
-				let render_state = &frame.wgpu_render_state().unwrap();
-				let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
-					image.width() as i32,
-					image.height() as i32,
-					image.as_bytes(),
-					mip.format(),
-					&render_state.device,
-					&render_state.queue,
-				) else {
-					self.error = Some(String::from("Could not encode texture"));
-					return;
-				};
-
-				let mut tex = kkdlib::txp::Texture::new();
-				tex.set_has_cube_map(false);
-				tex.set_array_size(1);
-				tex.set_mipmaps_count(1);
-				tex.add_mipmap(&mipmap);
-				texture.texture = tex;
-				texture.texture_updated = true;
-			}
+			let mut tex = kkdlib::txp::Texture::new();
+			tex.set_has_cube_map(false);
+			tex.set_array_size(1);
+			tex.set_mipmaps_count(1);
+			tex.add_mipmap(&mipmap);
+			texture.texture = tex;
+			texture.texture_updated = true;
 		}
 	}
 }
@@ -1099,8 +1024,8 @@ impl TreeNode for SpriteInfoNode {
 		Some(egui_wgpu::Callback::new_paint_callback(
 			rect,
 			WgpuSpriteCallback {
-				is_ycbcr: texture.texture.is_ycbcr(),
 				sprite_coords: [x, y, w, h],
+				texture_format: if texture.texture.is_ycbcr() { 1 } else { 0 },
 				texture_index: texture.index,
 			},
 		))
@@ -1108,8 +1033,8 @@ impl TreeNode for SpriteInfoNode {
 }
 
 struct WgpuSpriteCallback {
-	is_ycbcr: bool,
 	sprite_coords: [f32; 4],
+	texture_format: u32,
 	texture_index: u32,
 }
 
@@ -1124,26 +1049,38 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 	) -> Vec<wgpu::CommandBuffer> {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 
-		let spr_info = SpriteInfo {
+		let spr_info = VideoInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [
-				[self.sprite_coords[0], self.sprite_coords[3]],
-				[self.sprite_coords[2], self.sprite_coords[3]],
-				[self.sprite_coords[0], self.sprite_coords[1]],
-				[self.sprite_coords[2], self.sprite_coords[1]],
-			],
 			color: [1.0, 1.0, 1.0, 1.0],
-			matte_tex_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
-			is_ycbcr: if self.is_ycbcr { 1 } else { 0 },
 			has_matte: 0,
-			matte_is_ycbcr: 0,
-			_padding: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
 		};
 
 		queue.write_buffer(
 			&resources.uniform_buffers[0].0,
 			0,
 			bytemuck::cast_slice(&[spr_info]),
+		);
+
+		let tex_info = TextureInfo {
+			tex_coords: [
+				[self.sprite_coords[0], self.sprite_coords[3]],
+				[self.sprite_coords[2], self.sprite_coords[3]],
+				[self.sprite_coords[0], self.sprite_coords[1]],
+				[self.sprite_coords[2], self.sprite_coords[1]],
+			],
+			format: self.texture_format,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
+		};
+
+		queue.write_buffer(
+			&&resources.texture_info_buffer,
+			0,
+			bytemuck::cast_slice(&[tex_info]),
 		);
 
 		Vec::new()
@@ -1158,12 +1095,16 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let texture: &WgpuRenderTextures = callback_resources.get().unwrap();
 		render_pass.set_pipeline(&resources.pipeline_normal);
+		render_pass.set_bind_group(0, &resources.sampler, &[]);
 		render_pass.set_bind_group(
-			0,
+			1,
 			&texture.fragment_bind_group[self.texture_index as usize].1,
 			&[],
 		);
-		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_bind_group(2, &resources.texture_info, &[]);
+		render_pass.set_bind_group(3, &texture.empty_texture, &[]);
+		render_pass.set_bind_group(4, &resources.texture_info, &[]);
+		render_pass.set_bind_group(5, &resources.uniform_buffers[0].1, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
 	}

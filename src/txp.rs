@@ -8,7 +8,6 @@ use eframe::egui_wgpu::wgpu::util::DeviceExt;
 use image::EncodableLayout;
 use kkdlib::{spr, txp};
 use regex::Regex;
-use std::collections::*;
 use std::rc::Rc;
 use std::sync::*;
 
@@ -229,35 +228,19 @@ impl TextureNode {
 		};
 
 		if self.texture.is_ycbcr() {
-			#[cfg(feature = "directxtex")]
-			{
-				let Some(texture) = txp::Texture::encode_ycbcr(
-					image.width() as i32,
-					image.height() as i32,
-					image.flipv().to_rgba8().as_bytes(),
-				) else {
-					self.error = Some(String::from("Could not encode image"));
-					return;
-				};
-				self.texture = texture;
-				self.texture_updated = true;
-			}
-			#[cfg(not(feature = "directxtex"))]
-			{
-				let render_state = &frame.wgpu_render_state().unwrap();
-				let Some(texture) = txp::Texture::encode_ycbcr(
-					image.width(),
-					image.height(),
-					image.flipv().to_rgba8().as_bytes(),
-					&render_state.device,
-					&render_state.queue,
-				) else {
-					self.error = Some(String::from("Could not encode image"));
-					return;
-				};
-				self.texture = texture;
-				self.texture_updated = true;
-			}
+			let render_state = &frame.wgpu_render_state().unwrap();
+			let Some(texture) = txp::Texture::encode_ycbcr(
+				image.width(),
+				image.height(),
+				image.flipv().to_rgba8().as_bytes(),
+				&render_state.device,
+				&render_state.queue,
+			) else {
+				self.error = Some(String::from("Could not encode image"));
+				return;
+			};
+			self.texture = texture;
+			self.texture_updated = true;
 		} else {
 			let mut texture = txp::Texture::new();
 			texture.set_has_cube_map(false);
@@ -277,45 +260,24 @@ impl TextureNode {
 					break;
 				}
 
-				#[cfg(feature = "directxtex")]
-				{
-					let Some(mipmap) = txp::Mipmap::from_rgba(
-						width as i32,
-						height as i32,
-						image
-							.flipv()
-							.resize(width, height, image::imageops::FilterType::Lanczos3)
-							.to_rgba8()
-							.as_bytes(),
-						mip.format(),
-					) else {
-						self.error = Some(String::from("Could not encode image"));
-						return;
-					};
+				let render_state = &frame.wgpu_render_state().unwrap();
+				let Some(mipmap) = txp::Mipmap::from_rgba_gpu(
+					width as i32,
+					height as i32,
+					image
+						.flipv()
+						.resize(width, height, image::imageops::FilterType::Lanczos3)
+						.to_rgba8()
+						.as_bytes(),
+					mip.format(),
+					&render_state.device,
+					&render_state.queue,
+				) else {
+					self.error = Some(String::from("Could not encode image"));
+					return;
+				};
 
-					texture.add_mipmap(&mipmap);
-				}
-				#[cfg(not(feature = "directxtex"))]
-				{
-					let render_state = &frame.wgpu_render_state().unwrap();
-					let Some(mipmap) = txp::Mipmap::from_rgba_gpu(
-						width as i32,
-						height as i32,
-						image
-							.flipv()
-							.resize(width, height, image::imageops::FilterType::Lanczos3)
-							.to_rgba8()
-							.as_bytes(),
-						mip.format(),
-						&render_state.device,
-						&render_state.queue,
-					) else {
-						self.error = Some(String::from("Could not encode image"));
-						return;
-					};
-
-					texture.add_mipmap(&mipmap);
-				}
+				texture.add_mipmap(&mipmap);
 			}
 			self.texture = texture;
 			self.texture_updated = true;
@@ -508,7 +470,7 @@ impl TreeNode for TextureNode {
 					});
 					row.col(|ui| {
 						let (old_format, selected) = if self.texture.is_ycbcr() {
-							(0x90, String::from("YCbCr"))
+							(0x90, String::from("YACbCr (BC5)"))
 						} else {
 							(mip.format() as u32, format!("{:?}", mip.format()))
 						};
@@ -557,7 +519,7 @@ impl TreeNode for TextureNode {
 									txp::Format::BC5 as u32,
 									"BC5 (RG)",
 								);
-								ui.selectable_value(&mut format, 0x90, "YCbCr");
+								ui.selectable_value(&mut format, 0x90, "YACbCr (BC5)");
 								ui.selectable_value(&mut format, txp::Format::L8 as u32, "L8");
 								ui.selectable_value(&mut format, txp::Format::L8A8 as u32, "L8A8");
 								ui.selectable_value(&mut format, txp::Format::BC7 as u32, "BC7");
@@ -565,67 +527,36 @@ impl TreeNode for TextureNode {
 							});
 
 						if format != old_format {
-							if format == 0x90 {
-								#[cfg(feature = "directxtex")]
-								{
-									let rgba = mip.rgba().unwrap_or_default();
-									replacement_texture = txp::Texture::encode_ycbcr(
-										mip.width(),
-										mip.height(),
-										&rgba,
-									);
-								}
-								#[cfg(not(feature = "directxtex"))]
-								{
-									let render_state = &frame.wgpu_render_state().unwrap();
-									let rgba = mip
-										.to_rgba_gpu(&render_state.device, &render_state.queue)
-										.unwrap_or_default();
-									replacement_texture = txp::Texture::encode_ycbcr(
-										mip.width() as u32,
-										mip.height() as u32,
-										&rgba,
-										&render_state.device,
-										&render_state.queue,
-									);
-								}
-							} else if old_format == 0x90 {
+							if old_format == 0x90 {
 								let rgba = self.texture.decode_ycbcr().unwrap_or_default();
-								#[cfg(feature = "directxtex")]
-								{
-									if let Some(mip) = txp::Mipmap::from_rgba(
-										mip.width(),
-										mip.height(),
-										&rgba,
-										unsafe { std::mem::transmute(format) },
-									) {
-										let mut tex = txp::Texture::new();
-										tex.set_has_cube_map(false);
-										tex.set_array_size(1);
-										tex.set_mipmaps_count(1);
-										tex.add_mipmap(&mip);
-										replacement_texture = Some(tex);
-									}
+								let render_state = &frame.wgpu_render_state().unwrap();
+								if let Some(mip) = txp::Mipmap::from_rgba_gpu(
+									mip.width(),
+									mip.height(),
+									&rgba,
+									unsafe { std::mem::transmute(format) },
+									&render_state.device,
+									&render_state.queue,
+								) {
+									let mut tex = txp::Texture::new();
+									tex.set_has_cube_map(false);
+									tex.set_array_size(1);
+									tex.set_mipmaps_count(1);
+									tex.add_mipmap(&mip);
+									replacement_texture = Some(tex);
 								}
-								#[cfg(not(feature = "directxtex"))]
-								{
-									let render_state = &frame.wgpu_render_state().unwrap();
-									if let Some(mip) = txp::Mipmap::from_rgba_gpu(
-										mip.width(),
-										mip.height(),
-										&rgba,
-										unsafe { std::mem::transmute(format) },
-										&render_state.device,
-										&render_state.queue,
-									) {
-										let mut tex = txp::Texture::new();
-										tex.set_has_cube_map(false);
-										tex.set_array_size(1);
-										tex.set_mipmaps_count(1);
-										tex.add_mipmap(&mip);
-										replacement_texture = Some(tex);
-									}
-								}
+							} else if format == 0x90 {
+								let render_state = &frame.wgpu_render_state().unwrap();
+								let rgba = mip
+									.to_rgba_gpu(&render_state.device, &render_state.queue)
+									.unwrap_or_default();
+								replacement_texture = txp::Texture::encode_ycbcr(
+									mip.width() as u32,
+									mip.height() as u32,
+									&rgba,
+									&render_state.device,
+									&render_state.queue,
+								);
 							} else {
 								let mut tex = txp::Texture::new();
 								tex.set_has_cube_map(self.texture.has_cube_map());
@@ -635,34 +566,19 @@ impl TreeNode for TextureNode {
 									if mip.width() < 4 || mip.height() < 4 {
 										break;
 									}
-									#[cfg(feature = "directxtex")]
-									{
-										let rgba = mip.rgba().unwrap_or_default();
-										if let Some(mip) = txp::Mipmap::from_rgba(
-											mip.width(),
-											mip.height(),
-											&rgba,
-											unsafe { std::mem::transmute(format) },
-										) {
-											tex.add_mipmap(&mip);
-										}
-									}
-									#[cfg(not(feature = "directxtex"))]
-									{
-										let render_state = &frame.wgpu_render_state().unwrap();
-										let rgba = mip
-											.to_rgba_gpu(&render_state.device, &render_state.queue)
-											.unwrap_or_default();
-										if let Some(mip) = txp::Mipmap::from_rgba_gpu(
-											mip.width(),
-											mip.height(),
-											&rgba,
-											unsafe { std::mem::transmute(format) },
-											&render_state.device,
-											&render_state.queue,
-										) {
-											tex.add_mipmap(&mip);
-										}
+									let render_state = &frame.wgpu_render_state().unwrap();
+									let rgba = mip
+										.to_rgba_gpu(&render_state.device, &render_state.queue)
+										.unwrap_or_default();
+									if let Some(mip) = txp::Mipmap::from_rgba_gpu(
+										mip.width(),
+										mip.height(),
+										&rgba,
+										unsafe { std::mem::transmute(format) },
+										&render_state.device,
+										&render_state.queue,
+									) {
+										tex.add_mipmap(&mip);
 									}
 								}
 								replacement_texture = Some(tex);
@@ -740,21 +656,33 @@ impl TreeNode for TextureNode {
 			bytemuck::cast_slice(&verticies),
 		);
 
-		let spr_info = SpriteInfo {
+		let video_info = VideoInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]],
 			color: [1.0, 1.0, 1.0, 1.0],
-			matte_tex_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
-			is_ycbcr: if self.texture.is_ycbcr() { 1 } else { 0 },
 			has_matte: 0,
-			matte_is_ycbcr: 0,
-			_padding: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
 		};
 
 		render_state.queue.write_buffer(
 			&resources.uniform_buffers[0].0,
 			0,
-			bytemuck::cast_slice(&[spr_info]),
+			bytemuck::cast_slice(&[video_info]),
+		);
+
+		let texture_info = TextureInfo {
+			tex_coords: [[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]],
+			format: if self.texture.is_ycbcr() { 1 } else { 0 },
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
+		};
+
+		render_state.queue.write_buffer(
+			&resources.texture_info_buffer,
+			0,
+			bytemuck::cast_slice(&[texture_info]),
 		);
 	}
 
@@ -820,12 +748,16 @@ impl egui_wgpu::CallbackTrait for WgpuTextureCallback {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let texture: &WgpuRenderTextures = callback_resources.get().unwrap();
 		render_pass.set_pipeline(&resources.pipeline_normal);
+		render_pass.set_bind_group(0, &resources.sampler, &[]);
 		render_pass.set_bind_group(
-			0,
+			1,
 			&texture.fragment_bind_group[self.texture_index as usize].1,
 			&[],
 		);
-		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_bind_group(2, &resources.texture_info, &[]);
+		render_pass.set_bind_group(3, &texture.empty_texture, &[]);
+		render_pass.set_bind_group(4, &resources.texture_info, &[]);
+		render_pass.set_bind_group(5, &resources.uniform_buffers[0].1, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 		render_pass.draw(0..6, 0..1);
 	}
@@ -836,20 +768,19 @@ pub struct WgpuRenderResources {
 	pub pipeline_screen: wgpu::RenderPipeline,
 	pub pipeline_add: wgpu::RenderPipeline,
 	// Multiply and overlay currently unimplemented
-	pub fragment_bind_group_layout: wgpu::BindGroupLayout,
-	pub uniform_bind_group_layout: wgpu::BindGroupLayout,
+	pub texture_bind_group_layout: wgpu::BindGroupLayout,
+	pub texture_info_bind_group_layout: wgpu::BindGroupLayout,
+	pub video_bind_group_layout: wgpu::BindGroupLayout,
+	pub sampler: wgpu::BindGroup,
 	pub vertex_buffer: wgpu::Buffer,
 	pub uniform_buffers: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
-	pub sampler: wgpu::Sampler,
+	pub texture_info_buffer: wgpu::Buffer,
+	pub texture_info: wgpu::BindGroup,
 }
 
 pub struct WgpuRenderTextures {
 	pub fragment_bind_group: Vec<(wgpu::Texture, wgpu::BindGroup)>,
 	pub empty_texture: wgpu::BindGroup,
-}
-
-pub struct WgpuMatteTextures {
-	pub matte_bind_groups: BTreeMap<(usize, usize), wgpu::BindGroup>,
 }
 
 #[repr(C)]
@@ -861,54 +792,55 @@ pub struct Vertex {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct SpriteInfo {
-	pub matrix: [[f32; 4]; 4],
+pub struct TextureInfo {
 	pub tex_coords: [[f32; 2]; 4],
+	pub format: u32,
+	pub _padding_0: u32,
+	pub _padding_1: u32,
+	pub _padding_2: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct VideoInfo {
+	pub matrix: [[f32; 4]; 4],
 	pub color: [f32; 4],
-	pub matte_tex_coords: [[f32; 2]; 4],
-	pub is_ycbcr: u32,
 	pub has_matte: u32,
-	pub matte_is_ycbcr: u32,
-	pub _padding: u32,
+	pub _padding_0: u32,
+	pub _padding_1: u32,
+	pub _padding_2: u32,
 }
 
 pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 	let device = &render_state.device;
 
-	let fragment_bind_group_layout =
+	let sampler_bind_group_layout =
 		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[
-				wgpu::BindGroupLayoutEntry {
-					binding: 0,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Texture {
-						multisampled: false,
-						view_dimension: wgpu::TextureViewDimension::D2,
-						sample_type: wgpu::TextureSampleType::Float { filterable: true },
-					},
-					count: None,
-				},
-				wgpu::BindGroupLayoutEntry {
-					binding: 1,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Texture {
-						multisampled: false,
-						view_dimension: wgpu::TextureViewDimension::D2,
-						sample_type: wgpu::TextureSampleType::Float { filterable: true },
-					},
-					count: None,
-				},
-				wgpu::BindGroupLayoutEntry {
-					binding: 2,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-					count: None,
-				},
-			],
-			label: Some("Fragment bind group layout"),
+			entries: &[wgpu::BindGroupLayoutEntry {
+				binding: 0,
+				visibility: wgpu::ShaderStages::FRAGMENT,
+				ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+				count: None,
+			}],
+			label: Some("Sampler bind group layout"),
 		});
 
-	let uniform_bind_group_layout =
+	let texture_bind_group_layout =
+		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+			entries: &[wgpu::BindGroupLayoutEntry {
+				binding: 0,
+				visibility: wgpu::ShaderStages::FRAGMENT,
+				ty: wgpu::BindingType::Texture {
+					multisampled: false,
+					view_dimension: wgpu::TextureViewDimension::D2,
+					sample_type: wgpu::TextureSampleType::Float { filterable: true },
+				},
+				count: None,
+			}],
+			label: Some("Texture bind group layout"),
+		});
+
+	let texture_info_bind_group_layout =
 		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 			entries: &[wgpu::BindGroupLayoutEntry {
 				binding: 0,
@@ -920,14 +852,36 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 				},
 				count: None,
 			}],
-			label: Some("Uniform bind group layout"),
+			label: Some("Texture info bind group layout"),
+		});
+
+	let video_bind_group_layout =
+		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+			entries: &[wgpu::BindGroupLayoutEntry {
+				binding: 0,
+				visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+				ty: wgpu::BindingType::Buffer {
+					ty: wgpu::BufferBindingType::Uniform,
+					has_dynamic_offset: false,
+					min_binding_size: None,
+				},
+				count: None,
+			}],
+			label: Some("Video bind group layout"),
 		});
 
 	let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
 	let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 		label: Some("Texture Render Pipeline Layout"),
-		bind_group_layouts: &[&fragment_bind_group_layout, &uniform_bind_group_layout],
+		bind_group_layouts: &[
+			&sampler_bind_group_layout,
+			&texture_bind_group_layout,
+			&texture_info_bind_group_layout,
+			&texture_bind_group_layout,
+			&texture_info_bind_group_layout,
+			&video_bind_group_layout,
+		],
 		push_constant_ranges: &[],
 	});
 
@@ -1093,22 +1047,20 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 	});
 
 	let base_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-		label: Some("Uniform buffer 0"),
-		contents: bytemuck::cast_slice(&[SpriteInfo {
+		label: Some("Video uniform buffer 0"),
+		contents: bytemuck::cast_slice(&[VideoInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
 			color: [1.0, 1.0, 1.0, 1.0],
-			matte_tex_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [1.0, 0.0]],
-			is_ycbcr: 0,
 			has_matte: 0,
-			matte_is_ycbcr: 0,
-			_padding: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
 		}]),
 		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
 	});
 
 	let uniform_buffer_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-		layout: &uniform_bind_group_layout,
+		layout: &video_bind_group_layout,
 		entries: &[wgpu::BindGroupEntry {
 			binding: 0,
 			resource: base_uniform_buffer.as_entire_binding(),
@@ -1126,6 +1078,36 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		..Default::default()
 	});
 
+	let sampler = device.create_bind_group(&wgpu::BindGroupDescriptor {
+		layout: &sampler_bind_group_layout,
+		entries: &[wgpu::BindGroupEntry {
+			binding: 0,
+			resource: wgpu::BindingResource::Sampler(&sampler),
+		}],
+		label: Some("Sampler bind group"),
+	});
+
+	let texture_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+		label: Some("Texture info buffer"),
+		contents: bytemuck::cast_slice(&[TextureInfo {
+			tex_coords: [[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]],
+			format: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
+		}]),
+		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+	});
+
+	let texture_info = device.create_bind_group(&wgpu::BindGroupDescriptor {
+		layout: &texture_info_bind_group_layout,
+		entries: &[wgpu::BindGroupEntry {
+			binding: 0,
+			resource: texture_info_buffer.as_entire_binding(),
+		}],
+		label: Some("Texture info bind group"),
+	});
+
 	render_state
 		.renderer
 		.write()
@@ -1134,10 +1116,13 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			pipeline_normal,
 			pipeline_screen,
 			pipeline_add,
-			fragment_bind_group_layout,
-			uniform_bind_group_layout,
+			texture_bind_group_layout,
+			texture_info_bind_group_layout,
+			video_bind_group_layout,
 			vertex_buffer,
 			uniform_buffers: vec![(base_uniform_buffer, uniform_buffer_group)],
 			sampler,
+			texture_info_buffer,
+			texture_info,
 		});
 }

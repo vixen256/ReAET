@@ -7,6 +7,7 @@ use eframe::egui_wgpu::wgpu;
 use egui_material_icons::icons::*;
 use kkdlib::*;
 use regex::Regex;
+use std::collections::*;
 use std::ops::*;
 use std::rc::Rc;
 use std::sync::*;
@@ -524,8 +525,17 @@ impl AetSceneNode {
 
 		let mut videos = WgpuAetVideos {
 			videos: Vec::new(),
+			sprites: BTreeMap::new(),
 			viewport_size: [self.width as f32, self.height as f32],
 		};
+		videos.sprites.insert(
+			0,
+			WgpuAetSpriteInfo {
+				texture_index: 0,
+				texture_format: 0,
+				texture_coords: [0.0, 0.0, 0.0, 0.0],
+			},
+		);
 
 		self.root.display(
 			mat,
@@ -542,20 +552,15 @@ impl AetSceneNode {
 
 		if selected.len() >= 3 {
 			let mut frame = self.current_time;
-			let mut translation = [0.0; 3];
-			let mut scale = [1.0; 3];
+			let mut m = Mat4::default();
+			let mut opacity = 0.0;
 			if self.centered {
-				translation[0] = self.width as f64 / 2.0;
-				translation[1] = self.height as f64 / 2.0;
+				m.w.x = self.width as f32 / 2.0;
+				m.w.y = self.height as f32 / 2.0;
 			}
 
 			if let Some(video) = &self.root.layers[selected[2]].try_lock().unwrap().video {
-				translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
-				translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
-				scale[0] *= video.scale_x.interpolate(frame) as f64;
-				scale[1] *= video.scale_y.interpolate(frame) as f64;
-				translation[0] -= scale[0] * video.anchor_x.interpolate(frame) as f64;
-				translation[1] -= scale[1] * video.anchor_y.interpolate(frame) as f64;
+				calc_mat(&mut m, &mut opacity, video, frame);
 			}
 
 			let selected =
@@ -573,21 +578,11 @@ impl AetSceneNode {
 						if let Some(parent) = &layer.parent
 							&& let Some(video) = &parent.try_lock().unwrap().video
 						{
-							translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
-							translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
-							scale[0] *= video.scale_x.interpolate(frame) as f64;
-							scale[1] *= video.scale_y.interpolate(frame) as f64;
-							translation[0] -= scale[0] * video.anchor_x.interpolate(frame) as f64;
-							translation[1] -= scale[1] * video.anchor_y.interpolate(frame) as f64;
+							calc_mat(&mut m, &mut opacity, video, frame);
 						}
 
 						if let Some(video) = &layer.video {
-							translation[0] += scale[0] * video.pos_x.interpolate(frame) as f64;
-							translation[1] += scale[1] * video.pos_y.interpolate(frame) as f64;
-							scale[0] *= video.scale_x.interpolate(frame) as f64;
-							scale[1] *= video.scale_y.interpolate(frame) as f64;
-							translation[0] -= scale[0] * video.anchor_x.interpolate(frame) as f64;
-							translation[1] -= scale[1] * video.anchor_y.interpolate(frame) as f64;
+							calc_mat(&mut m, &mut opacity, video, frame);
 						}
 
 						frame = (frame - layer.start_time) * layer.time_scale + layer.offset_time;
@@ -597,9 +592,11 @@ impl AetSceneNode {
 			if !selected.try_lock().unwrap().multi_selected
 				&& let Some(video) = &mut selected.try_lock().unwrap().video
 			{
-				translation[0] += video.anchor_x.interpolate(frame) as f64 * scale[0];
-				translation[1] += video.anchor_y.interpolate(frame) as f64 * scale[1];
-				translation[1] = -translation[1] + self.height as f64;
+				m.w = m.x * video.anchor_x.interpolate(frame)
+					+ m.y * video.anchor_y.interpolate(frame)
+					+ m.w;
+				m.w.y = -m.w.y + self.height as f32;
+				m.w.z = 0.0;
 
 				self.gizmo.update_config(GizmoConfig {
 					projection_matrix: transform_gizmo_egui::math::DMat4::from_cols_array_2d(&[
@@ -620,7 +617,7 @@ impl AetSceneNode {
 					transform_gizmo_egui::math::Transform::from_scale_rotation_translation(
 						transform_gizmo_egui::math::DVec3::default(),
 						transform_gizmo_egui::math::DQuat::default(),
-						translation,
+						[m.w.x as f64, m.w.y as f64, m.w.z as f64],
 					);
 
 				if let Some((result, _)) = self.gizmo.interact(ui, &[transform]) {
@@ -981,15 +978,11 @@ impl AetCompNode {
 					let Some(source) = video.sources.first() else {
 						if display_placeholders {
 							videos.videos.push(WgpuAetVideo {
-								is_ycbcr: false,
 								has_matte: false,
-								matte_is_ycbcr: false,
 								is_empty: true,
-								texture_coords: [0.0, 0.0, 0.0, 0.0],
-								matte_texture_coords: [0.0, 0.0, 0.0, 0.0],
 								source_size: [video.width as f32, video.height as f32],
-								texture_index: 0,
-								matte_texture_index: 0,
+								sprite_id: 0,
+								matte_sprite_id: 0,
 								mat: m,
 								color: [
 									video.color[0] as f32 / 255.0,
@@ -1014,64 +1007,57 @@ impl AetCompNode {
 						/ mip.height() as f32;
 					let w = (sprite.info.px() + sprite.info.width()) / mip.width() as f32;
 					let h = (mip.height() as f32 - sprite.info.py()) / mip.height() as f32;
+					let db_entry = sprite.db_entry.as_ref().unwrap().try_lock().unwrap();
+
+					if !videos.sprites.contains_key(&db_entry.id) {
+						videos.sprites.insert(
+							db_entry.id,
+							WgpuAetSpriteInfo {
+								texture_index: sprite.info.texid() as usize,
+								texture_format: if texture.texture.is_ycbcr() { 1 } else { 0 },
+								texture_coords: [x, y, w, h],
+							},
+						);
+					}
 
 					if matte.is_none()
 						&& let Some(video) = &layer.video
 						&& video.transfer_mode.matte != 0
 					{
-						matte = Some((
-							sprite.info.texid() as usize,
-							texture.texture.is_ycbcr(),
-							[x, y, w, h],
-						));
+						matte = Some(db_entry.id);
 						continue;
 					}
 
-					let video =
-						if let Some((matte_texture_index, matte_is_ycbcr, matte_texture_coords)) =
-							matte
-						{
-							matte = None;
-							WgpuAetVideo {
-								is_ycbcr: texture.texture.is_ycbcr(),
-								has_matte: true,
-								matte_is_ycbcr,
-								is_empty: false,
-								texture_coords: [x, y, w, h],
-								matte_texture_coords,
-								source_size: [video.width as f32, video.height as f32],
-								texture_index: sprite.info.texid() as usize,
-								matte_texture_index,
-								mat: m,
-								color: [1.0, 1.0, 1.0, opacity],
-								blend_mode: layer
-									.video
-									.as_ref()
-									.map_or(aet::BlendMode::Normal, |video| {
-										video.transfer_mode.mode
-									}),
-							}
-						} else {
-							WgpuAetVideo {
-								is_ycbcr: texture.texture.is_ycbcr(),
-								has_matte: false,
-								matte_is_ycbcr: false,
-								is_empty: false,
-								texture_coords: [x, y, w, h],
-								matte_texture_coords: [0.0, 0.0, 0.0, 0.0],
-								source_size: [video.width as f32, video.height as f32],
-								texture_index: sprite.info.texid() as usize,
-								matte_texture_index: 0,
-								mat: m,
-								color: [1.0, 1.0, 1.0, opacity],
-								blend_mode: layer
-									.video
-									.as_ref()
-									.map_or(aet::BlendMode::Normal, |video| {
-										video.transfer_mode.mode
-									}),
-							}
-						};
+					let video = if let Some(matte_sprite_id) = matte {
+						matte = None;
+						WgpuAetVideo {
+							has_matte: true,
+							is_empty: false,
+							source_size: [video.width as f32, video.height as f32],
+							sprite_id: db_entry.id,
+							matte_sprite_id,
+							mat: m,
+							color: [1.0, 1.0, 1.0, opacity],
+							blend_mode: layer
+								.video
+								.as_ref()
+								.map_or(aet::BlendMode::Normal, |video| video.transfer_mode.mode),
+						}
+					} else {
+						WgpuAetVideo {
+							has_matte: false,
+							is_empty: false,
+							source_size: [video.width as f32, video.height as f32],
+							sprite_id: db_entry.id,
+							matte_sprite_id: 0,
+							mat: m,
+							color: [1.0, 1.0, 1.0, opacity],
+							blend_mode: layer
+								.video
+								.as_ref()
+								.map_or(aet::BlendMode::Normal, |video| video.transfer_mode.mode),
+						}
+					};
 
 					videos.videos.push(video);
 				}
@@ -1100,76 +1086,150 @@ impl AetCompNode {
 					return;
 				};
 
-				let mut top = m;
-				top.x = top.x * width;
-				top.y = top.y * 5.0;
+				let top = Mat4 {
+					x: Vec4 {
+						x: width,
+						y: 0.0,
+						z: 0.0,
+						w: 0.0,
+					},
+					y: Vec4 {
+						x: 0.0,
+						y: 5.0,
+						z: 0.0,
+						w: 0.0,
+					},
+					z: Vec4 {
+						x: 0.0,
+						y: 0.0,
+						z: 1.0,
+						w: 0.0,
+					},
+					w: Vec4 {
+						x: 0.0,
+						y: 0.0,
+						z: 0.0,
+						w: 1.0,
+					},
+				};
 				videos.videos.push(WgpuAetVideo {
-					is_ycbcr: false,
 					has_matte: false,
-					matte_is_ycbcr: false,
 					is_empty: true,
-					texture_coords: [0.0, 0.0, 0.0, 0.0],
-					matte_texture_coords: [0.0, 0.0, 0.0, 0.0],
 					source_size: [1.0, 1.0],
-					texture_index: 0,
-					matte_texture_index: 0,
-					mat: top,
+					sprite_id: 0,
+					matte_sprite_id: 0,
+					mat: m * top,
 					color: [1.0, 1.0, 1.0, 1.0],
 					blend_mode: aet::BlendMode::Add,
 				});
 
-				let mut bottom = m;
-				bottom.w = bottom.x + bottom.y * (height - 5.0) + bottom.z + bottom.w;
-				bottom.x = bottom.x * width;
-				bottom.y = bottom.y * 5.0;
+				let bottom = Mat4 {
+					x: Vec4 {
+						x: width,
+						y: 0.0,
+						z: 0.0,
+						w: 0.0,
+					},
+					y: Vec4 {
+						x: 0.0,
+						y: 5.0,
+						z: 0.0,
+						w: 0.0,
+					},
+					z: Vec4 {
+						x: 0.0,
+						y: 0.0,
+						z: 1.0,
+						w: 0.0,
+					},
+					w: Vec4 {
+						x: 0.0,
+						y: height - 5.0,
+						z: 0.0,
+						w: 1.0,
+					},
+				};
 				videos.videos.push(WgpuAetVideo {
-					is_ycbcr: false,
 					has_matte: false,
-					matte_is_ycbcr: false,
 					is_empty: true,
-					texture_coords: [0.0, 0.0, 0.0, 0.0],
-					matte_texture_coords: [0.0, 0.0, 0.0, 0.0],
 					source_size: [1.0, 1.0],
-					texture_index: 0,
-					matte_texture_index: 0,
-					mat: bottom,
+					sprite_id: 0,
+					matte_sprite_id: 0,
+					mat: m * bottom,
 					color: [1.0, 1.0, 1.0, 1.0],
 					blend_mode: aet::BlendMode::Add,
 				});
 
-				let mut left = m;
-				left.x = left.x * 5.0;
-				left.y = left.y * height;
+				let left = Mat4 {
+					x: Vec4 {
+						x: 5.0,
+						y: 0.0,
+						z: 0.0,
+						w: 0.0,
+					},
+					y: Vec4 {
+						x: 0.0,
+						y: height,
+						z: 0.0,
+						w: 0.0,
+					},
+					z: Vec4 {
+						x: 0.0,
+						y: 0.0,
+						z: 1.0,
+						w: 0.0,
+					},
+					w: Vec4 {
+						x: 0.0,
+						y: 0.0,
+						z: 0.0,
+						w: 1.0,
+					},
+				};
 				videos.videos.push(WgpuAetVideo {
-					is_ycbcr: false,
 					has_matte: false,
-					matte_is_ycbcr: false,
 					is_empty: true,
-					texture_coords: [0.0, 0.0, 0.0, 0.0],
-					matte_texture_coords: [0.0, 0.0, 0.0, 0.0],
 					source_size: [1.0, 1.0],
-					texture_index: 0,
-					matte_texture_index: 0,
-					mat: left,
+					sprite_id: 0,
+					matte_sprite_id: 0,
+					mat: m * left,
 					color: [1.0, 1.0, 1.0, 1.0],
 					blend_mode: aet::BlendMode::Add,
 				});
 
-				let mut right = m;
-				right.w = right.x * (width - 5.0) + right.y + right.z + right.w;
-				right.x = right.x * 5.0;
-				right.y = right.y * height;
+				let right = Mat4 {
+					x: Vec4 {
+						x: 5.0,
+						y: 0.0,
+						z: 0.0,
+						w: 0.0,
+					},
+					y: Vec4 {
+						x: 0.0,
+						y: height,
+						z: 0.0,
+						w: 0.0,
+					},
+					z: Vec4 {
+						x: 0.0,
+						y: 0.0,
+						z: 1.0,
+						w: 0.0,
+					},
+					w: Vec4 {
+						x: width - 5.0,
+						y: 0.0,
+						z: 0.0,
+						w: 1.0,
+					},
+				};
 				videos.videos.push(WgpuAetVideo {
-					is_ycbcr: false,
 					has_matte: false,
-					matte_is_ycbcr: false,
 					is_empty: true,
-					texture_coords: [0.0, 0.0, 0.0, 0.0],
-					matte_texture_coords: [0.0, 0.0, 0.0, 0.0],
 					source_size: [1.0, 1.0],
-					texture_index: 0,
-					matte_texture_index: 0,
-					mat: right,
+					sprite_id: 0,
+					matte_sprite_id: 0,
+					mat: m * right,
 					color: [1.0, 1.0, 1.0, 1.0],
 					blend_mode: aet::BlendMode::Add,
 				});
@@ -1981,16 +2041,23 @@ impl TreeNode for AetLayerNode {
 					});
 				});
 
-				for (name, value) in &mut self.markers {
+				self.markers.retain_mut(|(name, value)| {
+					let mut want_deletion = false;
 					body.row(height, |mut row| {
 						row.col(|ui| {
 							ui.text_edit_singleline(name);
 						});
 						row.col(|ui| {
-							crate::app::num_edit(ui, value, 2);
+							ui.horizontal(|ui| {
+								crate::app::num_edit(ui, value, 2);
+								if ui.button(ICON_REMOVE).clicked() {
+									want_deletion = true;
+								}
+							});
 						});
 					});
-				}
+					!want_deletion
+				});
 			});
 	}
 
@@ -2507,21 +2574,28 @@ pub struct AetAudioNode {
 struct WgpuAetVideos {
 	viewport_size: [f32; 2],
 	videos: Vec<WgpuAetVideo>,
+	sprites: BTreeMap<u32, WgpuAetSpriteInfo>,
 }
 
 struct WgpuAetVideo {
-	is_ycbcr: bool,
 	has_matte: bool,
-	matte_is_ycbcr: bool,
 	is_empty: bool,
-	texture_coords: [f32; 4],
-	matte_texture_coords: [f32; 4],
+	blend_mode: aet::BlendMode,
 	source_size: [f32; 2],
-	texture_index: usize,
-	matte_texture_index: usize,
+	sprite_id: u32,
+	matte_sprite_id: u32,
 	mat: Mat4,
 	color: [f32; 4],
-	blend_mode: aet::BlendMode,
+}
+
+struct WgpuAetSpriteInfo {
+	texture_index: usize,
+	texture_format: u32,
+	texture_coords: [f32; 4],
+}
+
+struct WgpuSpriteInfos {
+	sprites: BTreeMap<u32, (wgpu::Buffer, wgpu::BindGroup)>,
 }
 
 impl egui_wgpu::CallbackTrait for WgpuAetVideos {
@@ -2533,20 +2607,70 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		_egui_encoder: &mut wgpu::CommandEncoder,
 		callback_resources: &mut egui_wgpu::CallbackResources,
 	) -> Vec<wgpu::CommandBuffer> {
-		let mut spr_infos = Vec::new();
+		if callback_resources.get::<WgpuSpriteInfos>().is_none() {
+			callback_resources.insert(WgpuSpriteInfos {
+				sprites: BTreeMap::new(),
+			});
+		}
 
-		spr_infos.push(SpriteInfo {
+		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
+		let texture_info_bind_group_layout = resources.texture_info_bind_group_layout.clone();
+		let wgpu_sprite_infos: &mut WgpuSpriteInfos = callback_resources.get_mut().unwrap();
+		for (id, sprite) in self.sprites.iter().map(|(id, sprite)| {
+			(
+				id,
+				TextureInfo {
+					tex_coords: [
+						[sprite.texture_coords[0], sprite.texture_coords[3]],
+						[sprite.texture_coords[2], sprite.texture_coords[3]],
+						[sprite.texture_coords[0], sprite.texture_coords[1]],
+						[sprite.texture_coords[2], sprite.texture_coords[1]],
+					],
+					format: sprite.texture_format,
+					_padding_0: 0,
+					_padding_1: 0,
+					_padding_2: 0,
+				},
+			)
+		}) {
+			if !wgpu_sprite_infos.sprites.contains_key(id) {
+				let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+					label: Some(&format!("Texture info buffer {id}")),
+					size: std::mem::size_of::<TextureInfo>() as wgpu::BufferAddress,
+					usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+					mapped_at_creation: false,
+				});
+
+				let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+					layout: &texture_info_bind_group_layout,
+					entries: &[wgpu::BindGroupEntry {
+						binding: 0,
+						resource: buffer.as_entire_binding(),
+					}],
+					label: Some(&format!("Texture info bind group {id}")),
+				});
+				wgpu_sprite_infos.sprites.insert(*id, (buffer, bind_group));
+			}
+
+			queue.write_buffer(
+				&wgpu_sprite_infos.sprites.get(id).unwrap().0,
+				0,
+				bytemuck::cast_slice(&[sprite]),
+			);
+		}
+
+		let mut video_infos = Vec::new();
+
+		video_infos.push(VideoInfo {
 			matrix: crate::aet::Mat4::default().into(),
-			tex_coords: [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
 			color: [0.0, 0.0, 0.0, 1.0],
-			matte_tex_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
-			is_ycbcr: 0,
 			has_matte: 0,
-			matte_is_ycbcr: 0,
-			_padding: 0,
+			_padding_0: 0,
+			_padding_1: 0,
+			_padding_2: 0,
 		});
 
-		spr_infos.extend(self.videos.iter().map(|video| {
+		video_infos.extend(self.videos.iter().map(|video| {
 			let mut m = video.mat;
 			// Offset to match intended position
 			m.w =
@@ -2583,82 +2707,28 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			m.x = m.x * (video.source_size[0] / 2.0);
 			m.y = m.y * (-video.source_size[1] / 2.0);
 
-			let matte_textures: &WgpuMatteTextures = callback_resources.get().unwrap();
-
-			if video.has_matte
-				&& !matte_textures
-					.matte_bind_groups
-					.contains_key(&(video.texture_index, video.matte_texture_index))
-			{
-				let textures: &WgpuRenderTextures = callback_resources.get().unwrap();
-				let resources: &WgpuRenderResources = callback_resources.get().unwrap();
-				let (tex0, _) = &textures.fragment_bind_group[video.texture_index];
-				let (tex1, _) = &textures.fragment_bind_group[video.matte_texture_index];
-
-				let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-					layout: &resources.fragment_bind_group_layout,
-					entries: &[
-						wgpu::BindGroupEntry {
-							binding: 0,
-							resource: wgpu::BindingResource::TextureView(
-								&tex0.create_view(&wgpu::TextureViewDescriptor::default()),
-							),
-						},
-						wgpu::BindGroupEntry {
-							binding: 1,
-							resource: wgpu::BindingResource::TextureView(
-								&tex1.create_view(&wgpu::TextureViewDescriptor::default()),
-							),
-						},
-						wgpu::BindGroupEntry {
-							binding: 2,
-							resource: wgpu::BindingResource::Sampler(&resources.sampler),
-						},
-					],
-					label: Some("Matte fragment bind group"),
-				});
-
-				let matte_textures: &mut WgpuMatteTextures = callback_resources.get_mut().unwrap();
-
-				matte_textures
-					.matte_bind_groups
-					.insert((video.texture_index, video.matte_texture_index), bind_group);
-			}
-
-			SpriteInfo {
+			VideoInfo {
 				matrix: m.into(),
-				tex_coords: [
-					[video.texture_coords[0], video.texture_coords[3]],
-					[video.texture_coords[2], video.texture_coords[3]],
-					[video.texture_coords[0], video.texture_coords[1]],
-					[video.texture_coords[2], video.texture_coords[1]],
-				],
 				color: video.color,
-				matte_tex_coords: [
-					[video.matte_texture_coords[0], video.matte_texture_coords[3]],
-					[video.matte_texture_coords[2], video.matte_texture_coords[3]],
-					[video.matte_texture_coords[0], video.matte_texture_coords[1]],
-					[video.matte_texture_coords[2], video.matte_texture_coords[1]],
-				],
-				is_ycbcr: if video.is_ycbcr { 1 } else { 0 },
 				has_matte: if video.has_matte { 1 } else { 0 },
-				matte_is_ycbcr: if video.matte_is_ycbcr { 1 } else { 0 },
-				_padding: 0,
+				_padding_0: 0,
+				_padding_1: 0,
+				_padding_2: 0,
 			}
 		}));
 
 		let resources: &mut WgpuRenderResources = callback_resources.get_mut().unwrap();
 
-		for i in resources.uniform_buffers.len()..spr_infos.len() {
+		for i in resources.uniform_buffers.len()..video_infos.len() {
 			let buffer = device.create_buffer(&wgpu::BufferDescriptor {
 				label: Some(&format!("Uniform buffer {i}")),
-				size: std::mem::size_of::<SpriteInfo>() as wgpu::BufferAddress,
+				size: std::mem::size_of::<VideoInfo>() as wgpu::BufferAddress,
 				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
 				mapped_at_creation: false,
 			});
 
 			let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-				layout: &resources.uniform_bind_group_layout,
+				layout: &resources.video_bind_group_layout,
 				entries: &[wgpu::BindGroupEntry {
 					binding: 0,
 					resource: buffer.as_entire_binding(),
@@ -2669,11 +2739,11 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			resources.uniform_buffers.push((buffer, bind_group));
 		}
 
-		for i in 0..spr_infos.len() {
+		for i in 0..video_infos.len() {
 			queue.write_buffer(
 				&resources.uniform_buffers[i].0,
 				0,
-				bytemuck::cast_slice(&[spr_infos[i]]),
+				bytemuck::cast_slice(&[video_infos[i]]),
 			);
 		}
 
@@ -2688,15 +2758,21 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 	) {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 		let textures: &WgpuRenderTextures = callback_resources.get().unwrap();
-		let matte_textures: &WgpuMatteTextures = callback_resources.get().unwrap();
+		let sprites: &WgpuSpriteInfos = callback_resources.get().unwrap();
 
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 
 		// Draw black base
 		render_pass.set_pipeline(&resources.pipeline_normal);
-		render_pass.set_bind_group(0, &textures.empty_texture, &[]);
-		render_pass.set_bind_group(1, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_bind_group(0, &resources.sampler, &[]);
+		render_pass.set_bind_group(1, &textures.empty_texture, &[]);
+		render_pass.set_bind_group(2, &resources.texture_info, &[]);
+		render_pass.set_bind_group(3, &textures.empty_texture, &[]);
+		render_pass.set_bind_group(4, &resources.texture_info, &[]);
+		render_pass.set_bind_group(5, &resources.uniform_buffers[0].1, &[]);
 		render_pass.draw(0..6, 0..1);
+
+		let mut empty_matte_set = true;
 
 		for (i, video) in self.videos.iter().enumerate() {
 			match video.blend_mode {
@@ -2704,25 +2780,44 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				aet::BlendMode::Add => render_pass.set_pipeline(&resources.pipeline_add),
 				_ => render_pass.set_pipeline(&resources.pipeline_normal),
 			}
+
 			if video.is_empty {
-				render_pass.set_bind_group(0, &textures.empty_texture, &[]);
-			} else if video.has_matte {
+				render_pass.set_bind_group(1, &textures.empty_texture, &[]);
+				render_pass.set_bind_group(2, &resources.texture_info, &[]);
+			} else {
+				let sprite = self.sprites.get(&video.sprite_id).unwrap();
 				render_pass.set_bind_group(
-					0,
-					matte_textures
-						.matte_bind_groups
-						.get(&(video.texture_index, video.matte_texture_index))
-						.unwrap(),
+					1,
+					&textures.fragment_bind_group[sprite.texture_index].1,
 					&[],
 				);
-			} else {
 				render_pass.set_bind_group(
-					0,
-					&textures.fragment_bind_group[video.texture_index].1,
+					2,
+					&sprites.sprites.get(&video.sprite_id).unwrap().1,
 					&[],
 				);
 			}
-			render_pass.set_bind_group(1, &resources.uniform_buffers[i + 1].1, &[]);
+
+			if video.has_matte {
+				let sprite = self.sprites.get(&video.matte_sprite_id).unwrap();
+				render_pass.set_bind_group(
+					3,
+					&textures.fragment_bind_group[sprite.texture_index].1,
+					&[],
+				);
+				render_pass.set_bind_group(
+					4,
+					&sprites.sprites.get(&video.matte_sprite_id).unwrap().1,
+					&[],
+				);
+				empty_matte_set = false;
+			} else if !empty_matte_set {
+				render_pass.set_bind_group(3, &textures.empty_texture, &[]);
+				render_pass.set_bind_group(4, &resources.texture_info, &[]);
+				empty_matte_set = true;
+			}
+
+			render_pass.set_bind_group(5, &resources.uniform_buffers[i + 1].1, &[]);
 			render_pass.draw(0..6, 0..1);
 		}
 	}
