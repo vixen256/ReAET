@@ -292,21 +292,6 @@ impl AetSetNode {
 			scenes,
 		}
 	}
-
-	pub fn update_from(&mut self, other: &Self) {
-		self.name = other.name.clone();
-		self.modern = other.modern;
-		self.big_endian = other.big_endian;
-		self.is_x = other.is_x;
-
-		if self.scenes.len() == other.scenes.len() {
-			for (a, b) in self.scenes.iter_mut().zip(other.scenes.iter()) {
-				a.update_from(b);
-			}
-		} else {
-			self.scenes = other.scenes.clone();
-		}
-	}
 }
 
 #[derive(Clone)]
@@ -644,9 +629,7 @@ impl AetSceneNode {
 							}
 
 							if ui.input(|i| i.modifiers.ctrl) {
-								if video.pos_x.keys.len() == 1 {
-									video.pos_x.keys[0].value += delta.x as f32;
-								} else if let Some(key) = video
+								if let Some(key) = video
 									.pos_x
 									.keys
 									.iter_mut()
@@ -659,9 +642,7 @@ impl AetSceneNode {
 									video.pos_x.keys[0].value += delta.x as f32;
 								}
 
-								if video.pos_y.keys.len() == 1 {
-									video.pos_y.keys[0].value += delta.y as f32;
-								} else if let Some(key) = video
+								if let Some(key) = video
 									.pos_y
 									.keys
 									.iter_mut()
@@ -698,9 +679,7 @@ impl AetSceneNode {
 							}
 
 							if ui.input(|i| i.modifiers.ctrl) {
-								if video.rot_z.keys.len() == 1 {
-									video.rot_z.keys[0].value -= delta.to_degrees() as f32;
-								} else if let Some(key) = video
+								if let Some(key) = video
 									.pos_x
 									.keys
 									.iter_mut()
@@ -722,27 +701,6 @@ impl AetSceneNode {
 					}
 				}
 			}
-		}
-	}
-}
-
-impl AetSceneNode {
-	pub fn update_from(&mut self, other: &Self) {
-		self.name = other.name.clone();
-		self.start_time = other.start_time;
-		self.end_time = other.end_time;
-		self.fps = other.fps;
-		self.color = other.color;
-		self.width = other.width;
-		self.height = other.height;
-		self.camera = other.camera.clone();
-
-		if self.root.layers.len() == other.root.layers.len() {
-			for (a, b) in self.root.layers.iter_mut().zip(other.root.layers.iter()) {
-				a.try_lock().unwrap().update_from(&*b.try_lock().unwrap());
-			}
-		} else {
-			self.root = other.root.clone();
 		}
 	}
 }
@@ -2116,6 +2074,37 @@ impl TreeNode for AetLayerNode {
 
 				body.row(height, |mut row| {
 					row.col(|ui| {
+						ui.label("Video active");
+					});
+					row.col(|ui| {
+						let mut video_active = self.flags.video_active();
+						if egui::Checkbox::without_text(&mut video_active)
+							.ui(ui)
+							.changed()
+						{
+							self.flags.set_video_active(video_active);
+							self.visible = video_active;
+						}
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
+						ui.label("Audio active");
+					});
+					row.col(|ui| {
+						let mut audio_active = self.flags.audio_active();
+						if egui::Checkbox::without_text(&mut audio_active)
+							.ui(ui)
+							.changed()
+						{
+							self.flags.set_audio_active(audio_active);
+						}
+					});
+				});
+
+				body.row(height, |mut row| {
+					row.col(|ui| {
 						ui.label("Markers");
 					});
 					row.col(|ui| {
@@ -2154,6 +2143,11 @@ impl TreeNode for AetLayerNode {
 			if ui.button("Add").clicked() {
 				let mut layer = Self::create_with_item(AetItemNode::None);
 				layer.sprites = self.sprites.clone();
+				layer.flags = aet::LayerFlagsBuilder::new()
+					.with_video_active(true)
+					.with_audio_active(true)
+					.build();
+				layer.quality = aet::LayerQuality::Best;
 				comp.layers.push(Rc::new(Mutex::new(layer)));
 			}
 		};
@@ -2568,31 +2562,6 @@ impl AetLayerNode {
 			&& let Some(index) = ids.iter().position(|id| *id == hovered)
 		{
 			self.selected_key = index;
-		}
-	}
-
-	pub fn update_from(&mut self, other: &Self) {
-		self.name = other.name.clone();
-		self.start_time = other.start_time;
-		self.end_time = other.end_time;
-		self.offset_time = other.offset_time;
-		self.time_scale = other.time_scale;
-		self.flags = other.flags;
-		self.quality = other.quality;
-		self.markers = other.markers.clone();
-		self.video = other.video.clone();
-		self.audio = other.audio.clone();
-		self.audio = other.audio.clone();
-
-		if let AetItemNode::Comp(a) = &mut self.item
-			&& let AetItemNode::Comp(b) = &other.item
-			&& a.layers.len() == b.layers.len()
-		{
-			for (a, b) in a.layers.iter_mut().zip(b.layers.iter()) {
-				a.try_lock().unwrap().update_from(&b.try_lock().unwrap());
-			}
-		} else {
-			self.item = other.item.clone();
 		}
 	}
 
