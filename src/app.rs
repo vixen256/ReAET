@@ -1728,9 +1728,12 @@ impl eframe::App for App {
 		}
 
 		egui::CentralPanel::default().show(ctx, |ui| {
-			let selected = self.selected.clone();
 			let has_multi_select = !self.multi_select.is_empty();
-			if let Some(scene) = self.get_active_scene() {
+			if let Some(node) = self.aet_set.as_mut()
+				&& self.selected.len() >= 2
+				&& self.selected[0] == 0
+				&& let Some(scene) = node.scenes.get_mut(self.selected[1])
+			{
 				let (rect, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::empty());
 				let ar = rect.width() / rect.height();
 				let rect = if ar > scene.width as f32 / scene.height as f32 {
@@ -1761,7 +1764,7 @@ impl eframe::App for App {
 					}
 				};
 
-				scene.display_visual(ui, rect, &selected);
+				scene.display_visual(ui, rect, &mut self.selected);
 
 				if has_multi_select {
 					scene.gizmo.update_config(GizmoConfig {

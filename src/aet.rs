@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::sync::*;
 use transform_gizmo_egui::prelude::*;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Vec4 {
 	pub x: f32,
 	pub y: f32,
@@ -498,6 +498,25 @@ impl TreeNode for AetSceneNode {
 	}
 
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
+		if ui.button("Add").clicked() {
+			let mut layer = AetLayerNode::create_with_item(AetItemNode::None);
+			layer.sprites = self
+				.root
+				.layers
+				.first()
+				.unwrap()
+				.try_lock()
+				.unwrap()
+				.sprites
+				.clone();
+			layer.flags = aet::LayerFlagsBuilder::new()
+				.with_video_active(true)
+				.with_audio_active(true)
+				.build();
+			layer.quality = aet::LayerQuality::Best;
+			self.root.layers.push(Rc::new(Mutex::new(layer)));
+		}
+
 		if ui.button("Hide all").clicked() {
 			for layer in &mut self.root.layers {
 				layer.try_lock().unwrap().visible = false;
@@ -507,7 +526,12 @@ impl TreeNode for AetSceneNode {
 }
 
 impl AetSceneNode {
-	pub fn display_visual(&mut self, ui: &mut egui::Ui, rect: egui::Rect, selected: &[usize]) {
+	pub fn display_visual(
+		&mut self,
+		ui: &mut egui::Ui,
+		rect: egui::Rect,
+		selected: &mut Vec<usize>,
+	) {
 		let mut mat = Mat4::default();
 		if self.centered {
 			mat.w.x = self.width as f32 / 2.0;
@@ -713,6 +737,27 @@ impl AetSceneNode {
 						_ => {}
 					}
 				}
+			}
+		}
+
+		let resp = ui.interact(rect, ui.next_auto_id(), egui::Sense::click());
+
+		if ui.ctx().dragged_id().is_none()
+			&& resp.clicked()
+			&& let Some(pointer) = resp.interact_pointer_pos()
+		{
+			let x = (pointer.x - rect.min.x) / rect.width();
+			let y = (pointer.y - rect.min.y) / rect.height();
+			if let Some(new_path) = self.root.clicked(
+				mat,
+				self.current_time,
+				1.0,
+				self.display_placeholders,
+				&[x, y],
+				&[self.width as f32, self.height as f32],
+				&[selected[0], selected[1]],
+			) {
+				*selected = new_path;
 			}
 		}
 	}
@@ -999,6 +1044,10 @@ impl AetCompNode {
 				calc_mat(&mut m, &mut opacity, video, frame);
 			}
 
+			if opacity <= 0.001 {
+				continue;
+			}
+
 			match &layer.item {
 				AetItemNode::None => {}
 				AetItemNode::Video(video) => {
@@ -1214,7 +1263,14 @@ impl AetCompNode {
 			// Draw rectangle around selected elem
 			if path == selected || layer.multi_selected {
 				let (width, height) = if let AetItemNode::Video(video) = &layer.item {
-					(video.width as f32, video.height as f32)
+					if let Some(source) = video.sources.first()
+						&& let Some(sprite) = &source.sprite
+					{
+						let sprite = sprite.try_lock().unwrap();
+						(sprite.info.width(), sprite.info.height())
+					} else {
+						(video.width as f32, video.height as f32)
+					}
 				} else if let Some(video) = &layer.video {
 					(
 						video.anchor_x.interpolate(frame) * 2.0,
@@ -1373,6 +1429,180 @@ impl AetCompNode {
 				});
 			}
 		}
+	}
+
+	fn clicked(
+		&self,
+		mat: Mat4,
+		frame: f32,
+		opacity: f32,
+		display_placeholders: bool,
+		pos: &[f32; 2],
+		viewport_size: &[f32; 2],
+		path: &[usize],
+	) -> Option<Vec<usize>> {
+		for (i, layer) in self.layers.iter().enumerate() {
+			let layer = layer.try_lock().unwrap();
+			if frame < layer.start_time
+				|| frame >= layer.end_time
+				|| !layer.flags.video_active()
+				|| !layer.visible
+			{
+				continue;
+			}
+
+			let mut path = path.to_vec();
+			path.push(i);
+
+			let mut m = mat;
+			let mut parent_opacity = 0.0;
+			let mut opacity = opacity;
+			if let Some(parent) = &layer.parent
+				&& let Some(video) = &parent.try_lock().unwrap().video
+			{
+				calc_mat(&mut m, &mut parent_opacity, video, frame);
+			}
+			if let Some(video) = &layer.video {
+				calc_mat(&mut m, &mut opacity, video, frame);
+			}
+
+			if opacity <= 0.001 {
+				continue;
+			}
+
+			match &layer.item {
+				AetItemNode::None => {}
+				AetItemNode::Video(video) => {
+					let size = if let Some(source) = video.sources.first()
+						&& let Some(sprite) = &source.sprite
+					{
+						let sprite = sprite.try_lock().unwrap();
+						[sprite.info.width(), sprite.info.height()]
+					} else if display_placeholders {
+						[video.width as f32, video.height as f32]
+					} else {
+						continue;
+					};
+					m.w = m.x * (size[0] / 2.0) + m.y * (size[1] / 2.0) + m.z + m.w;
+
+					let projection = Mat4 {
+						x: Vec4 {
+							x: 2.0 / viewport_size[0],
+							y: 0.0,
+							z: 0.0,
+							w: 0.0,
+						},
+						y: Vec4 {
+							x: 0.0,
+							y: 2.0 / viewport_size[1],
+							z: 0.0,
+							w: 0.0,
+						},
+						z: Vec4 {
+							x: 0.0,
+							y: 0.0,
+							z: 1.0,
+							w: 0.0,
+						},
+						w: Vec4 {
+							x: -1.0,
+							y: -1.0,
+							z: 0.0,
+							w: 1.0,
+						},
+					};
+
+					let mut m = projection * m;
+					m.x = m.x * (size[0] / 2.0);
+					m.y = m.y * (size[1] / 2.0);
+
+					let tl = Vec4 {
+						x: -1.0,
+						y: -1.0,
+						z: 0.0,
+						w: 1.0,
+					};
+					let tr = Vec4 {
+						x: 1.0,
+						y: -1.0,
+						z: 0.0,
+						w: 1.0,
+					};
+					let bl = Vec4 {
+						x: -1.0,
+						y: 1.0,
+						z: 0.0,
+						w: 1.0,
+					};
+					let br = Vec4 {
+						x: 1.0,
+						y: 1.0,
+						z: 0.0,
+						w: 1.0,
+					};
+
+					let projection = Mat4 {
+						x: Vec4 {
+							x: 0.5,
+							..Default::default()
+						},
+						y: Vec4 {
+							y: 0.5,
+							..Default::default()
+						},
+						z: Vec4 {
+							z: 1.0,
+							..Default::default()
+						},
+						w: Vec4 {
+							x: 0.5,
+							y: 0.5,
+							z: 0.0,
+							w: 1.0,
+						},
+					};
+
+					let mut arr = [
+						projection * m * tl,
+						projection * m * bl,
+						projection * m * tr,
+						projection * m * br,
+					];
+					// (tl/bl), (tr/br)
+					arr.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+					if arr[0].y > arr[1].y {
+						arr.swap(0, 1);
+					}
+					if arr[2].y > arr[3].y {
+						arr.swap(2, 3);
+					}
+
+					// Not 100% accurate but good enough for now
+					if (pos[0] > arr[0].x || pos[0] > arr[1].x)
+						&& (pos[0] < arr[2].x || pos[0] > arr[3].x)
+						&& (pos[1] > arr[0].y || pos[1] > arr[1].y)
+						&& (pos[1] < arr[2].y || pos[1] < arr[3].y)
+					{
+						return Some(path);
+					}
+				}
+				AetItemNode::Audio(_) => {}
+				AetItemNode::Comp(comp) => {
+					if let Some(new_path) = comp.clicked(
+						m,
+						(frame - layer.start_time) * layer.time_scale + layer.offset_time,
+						opacity,
+						display_placeholders,
+						pos,
+						viewport_size,
+						&path,
+					) {
+						return Some(new_path);
+					}
+				}
+			}
+		}
+		None
 	}
 
 	pub fn show_node_curve_editor(
@@ -2162,18 +2392,18 @@ impl TreeNode for AetLayerNode {
 							if selected_sprite != old_selected_sprite {
 								source.sprite = self
 									.sprites
-									.lock()
+									.try_lock()
 									.unwrap()
 									.iter()
 									.find(|spr| {
 										spr.try_lock().unwrap().db_entry.is_some()
 											&& spr
-												.lock()
+												.try_lock()
 												.unwrap()
 												.db_entry
 												.as_ref()
 												.unwrap()
-												.lock()
+												.try_lock()
 												.unwrap()
 												.id == selected_sprite
 									})
