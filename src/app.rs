@@ -1655,6 +1655,7 @@ impl eframe::App for App {
 						ui,
 						&mut scene.selected_curve,
 						scene.current_time,
+						&[scene.width as f32, scene.height as f32],
 						0,
 						1,
 						&[0, self.selected[1]],

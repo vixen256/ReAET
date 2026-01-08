@@ -6,6 +6,7 @@ use eframe::egui::Widget;
 use eframe::egui_wgpu;
 use eframe::egui_wgpu::wgpu;
 use egui_material_icons::icons::*;
+use egui_plot::PlotItem;
 use kkdlib::*;
 use regex::Regex;
 use std::collections::*;
@@ -687,7 +688,7 @@ impl AetSceneNode {
 									.keys
 									.iter_mut()
 									.rev()
-									.skip_while(|key| key.frame >= frame + 1.0)
+									.skip_while(|key| key.frame >= frame + 1.001)
 									.next()
 								{
 									key.value += delta.y as f32;
@@ -1613,6 +1614,7 @@ impl AetCompNode {
 		ui: &mut egui::Ui,
 		selected_curve: &mut Option<CurveType>,
 		frame: f32,
+		viewport_size: &[f32; 2],
 		index: usize,
 		depth: usize,
 		path: &[usize],
@@ -1631,12 +1633,13 @@ impl AetCompNode {
 
 		let adjusted_frame = (frame - layer.start_time) * layer.time_scale + layer.offset_time;
 		if depth + 1 == desired_path.len() - 1 {
-			layer.display_curve_editor(ui, selected_curve, frame);
+			layer.display_curve_editor(ui, selected_curve, frame, viewport_size);
 		} else if let AetItemNode::Comp(comp) = &mut layer.item {
 			comp.show_node_curve_editor(
 				ui,
 				selected_curve,
 				adjusted_frame,
+				viewport_size,
 				index,
 				depth + 1,
 				&path,
@@ -2525,271 +2528,86 @@ impl AetLayerNode {
 		ui: &mut egui::Ui,
 		selected_curve: &mut Option<CurveType>,
 		frame: f32,
+		viewport_size: &[f32; 2],
 	) {
-		egui::SidePanel::left("CurveSelector")
-			.resizable(true)
-			.show_inside(ui, |ui| {
-				egui::ScrollArea::vertical().show(ui, |ui| {
-					if self.audio.is_some() {
-						if ui
-							.selectable_label(
-								*selected_curve == Some(CurveType::VolumeL),
-								"Volume L",
-							)
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::VolumeL);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(
-								*selected_curve == Some(CurveType::VolumeR),
-								"Volume R",
-							)
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::VolumeR);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(*selected_curve == Some(CurveType::PanL), "Pan L")
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::PanL);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(*selected_curve == Some(CurveType::PanR), "Pan R")
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::PanR);
-							self.selected_key = 0;
-						}
-					}
-
-					if self.video.is_some() {
-						let has_3d = self.video.as_ref().unwrap()._3d.is_some();
-						if ui
-							.selectable_label(
-								*selected_curve == Some(CurveType::AnchorX),
-								"Anchor X",
-							)
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::AnchorX);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(
-								*selected_curve == Some(CurveType::AnchorY),
-								"Anchor Y",
-							)
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::AnchorY);
-							self.selected_key = 0;
-						}
-						if has_3d
-							&& ui
-								.selectable_label(
-									*selected_curve == Some(CurveType::AnchorZ),
-									"Anchor Z",
-								)
-								.clicked()
-						{
-							*selected_curve = Some(CurveType::AnchorZ);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(*selected_curve == Some(CurveType::PosX), "Pos X")
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::PosX);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(*selected_curve == Some(CurveType::PosY), "Pos Y")
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::PosY);
-							self.selected_key = 0;
-						}
-						if has_3d
-							&& ui
-								.selectable_label(*selected_curve == Some(CurveType::PosZ), "Pos Z")
-								.clicked()
-						{
-							*selected_curve = Some(CurveType::PosZ);
-							self.selected_key = 0;
-						}
-						if has_3d
-							&& ui
-								.selectable_label(*selected_curve == Some(CurveType::DirX), "Dir X")
-								.clicked()
-						{
-							*selected_curve = Some(CurveType::DirX);
-							self.selected_key = 0;
-						}
-						if has_3d
-							&& ui
-								.selectable_label(*selected_curve == Some(CurveType::DirY), "Dir Y")
-								.clicked()
-						{
-							*selected_curve = Some(CurveType::DirY);
-							self.selected_key = 0;
-						}
-						if has_3d
-							&& ui
-								.selectable_label(*selected_curve == Some(CurveType::DirZ), "Dir Z")
-								.clicked()
-						{
-							*selected_curve = Some(CurveType::DirZ);
-							self.selected_key = 0;
-						}
-						if has_3d
-							&& ui
-								.selectable_label(*selected_curve == Some(CurveType::RotX), "Rot X")
-								.clicked()
-						{
-							*selected_curve = Some(CurveType::RotX);
-							self.selected_key = 0;
-						}
-						if has_3d
-							&& ui
-								.selectable_label(*selected_curve == Some(CurveType::RotY), "Rot Y")
-								.clicked()
-						{
-							*selected_curve = Some(CurveType::RotY);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(*selected_curve == Some(CurveType::RotZ), "Rot Z")
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::RotZ);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(*selected_curve == Some(CurveType::ScaleX), "Scale X")
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::ScaleX);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(*selected_curve == Some(CurveType::ScaleY), "Scale Y")
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::ScaleY);
-							self.selected_key = 0;
-						}
-						if has_3d
-							&& ui
-								.selectable_label(
-									*selected_curve == Some(CurveType::ScaleZ),
-									"Scale Z",
-								)
-								.clicked()
-						{
-							*selected_curve = Some(CurveType::ScaleZ);
-							self.selected_key = 0;
-						}
-						if ui
-							.selectable_label(
-								*selected_curve == Some(CurveType::Opacity),
-								"Opacity",
-							)
-							.clicked()
-						{
-							*selected_curve = Some(CurveType::Opacity);
-							self.selected_key = 0;
-						}
-					}
-
-					ui.take_available_space();
-				});
-			});
-
-		let Some(selected_curve) = &selected_curve else {
-			return;
-		};
-
 		let curve = match selected_curve {
-			CurveType::VolumeL => self.audio.as_mut().map(|audio| &mut audio.volume_l),
-			CurveType::VolumeR => self.audio.as_mut().map(|audio| &mut audio.volume_r),
-			CurveType::PanL => self.audio.as_mut().map(|audio| &mut audio.pan_l),
-			CurveType::PanR => self.audio.as_mut().map(|audio| &mut audio.pan_r),
+			None => None,
 
-			CurveType::AnchorX => self.video.as_mut().map(|video| &mut video.anchor_x),
-			CurveType::AnchorY => self.video.as_mut().map(|video| &mut video.anchor_y),
-			CurveType::PosX => self.video.as_mut().map(|video| &mut video.pos_x),
-			CurveType::PosY => self.video.as_mut().map(|video| &mut video.pos_y),
-			CurveType::RotZ => self.video.as_mut().map(|video| &mut video.rot_z),
-			CurveType::ScaleX => self.video.as_mut().map(|video| &mut video.scale_x),
-			CurveType::ScaleY => self.video.as_mut().map(|video| &mut video.scale_y),
-			CurveType::Opacity => self.video.as_mut().map(|video| &mut video.opacity),
+			Some(selected_curve) => match selected_curve {
+				CurveType::VolumeL => self.audio.as_mut().map(|audio| &mut audio.volume_l),
+				CurveType::VolumeR => self.audio.as_mut().map(|audio| &mut audio.volume_r),
+				CurveType::PanL => self.audio.as_mut().map(|audio| &mut audio.pan_l),
+				CurveType::PanR => self.audio.as_mut().map(|audio| &mut audio.pan_r),
 
-			CurveType::AnchorZ => self
-				.video
-				.as_mut()
-				.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.anchor_z))
-				.flatten(),
-			CurveType::PosZ => self
-				.video
-				.as_mut()
-				.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.pos_z))
-				.flatten(),
-			CurveType::DirX => self
-				.video
-				.as_mut()
-				.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_x))
-				.flatten(),
-			CurveType::DirY => self
-				.video
-				.as_mut()
-				.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_y))
-				.flatten(),
-			CurveType::DirZ => self
-				.video
-				.as_mut()
-				.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_z))
-				.flatten(),
-			CurveType::RotX => self
-				.video
-				.as_mut()
-				.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_x))
-				.flatten(),
-			CurveType::RotY => self
-				.video
-				.as_mut()
-				.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_y))
-				.flatten(),
-			CurveType::ScaleZ => self
-				.video
-				.as_mut()
-				.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.scale_z))
-				.flatten(),
+				CurveType::AnchorX => self.video.as_mut().map(|video| &mut video.anchor_x),
+				CurveType::AnchorY => self.video.as_mut().map(|video| &mut video.anchor_y),
+				CurveType::PosX => self.video.as_mut().map(|video| &mut video.pos_x),
+				CurveType::PosY => self.video.as_mut().map(|video| &mut video.pos_y),
+				CurveType::RotZ => self.video.as_mut().map(|video| &mut video.rot_z),
+				CurveType::ScaleX => self.video.as_mut().map(|video| &mut video.scale_x),
+				CurveType::ScaleY => self.video.as_mut().map(|video| &mut video.scale_y),
+				CurveType::Opacity => self.video.as_mut().map(|video| &mut video.opacity),
+
+				CurveType::AnchorZ => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.anchor_z))
+					.flatten(),
+				CurveType::PosZ => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.pos_z))
+					.flatten(),
+				CurveType::DirX => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_x))
+					.flatten(),
+				CurveType::DirY => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_y))
+					.flatten(),
+				CurveType::DirZ => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_z))
+					.flatten(),
+				CurveType::RotX => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_x))
+					.flatten(),
+				CurveType::RotY => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_y))
+					.flatten(),
+				CurveType::ScaleZ => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.scale_z))
+					.flatten(),
+			},
 		};
-
-		let Some(curve) = curve else {
-			return;
-		};
-
-		if curve.keys.is_empty() {
-			curve.keys.push(aet::FCurveKey {
-				frame: 0.0,
-				value: 0.0,
-				tangent: 0.0,
-			});
-		}
-
-		if self.selected_key >= curve.keys.len() {
-			self.selected_key = curve.keys.len() - 1;
-		}
 
 		egui::SidePanel::right("KeyEditor")
 			.resizable(true)
 			.show_inside(ui, |ui| {
+				let Some(curve) = curve else { return };
+
+				if curve.keys.is_empty() {
+					curve.keys.push(aet::FCurveKey {
+						frame: 0.0,
+						value: 0.0,
+						tangent: 0.0,
+					});
+				}
+
+				if self.selected_key >= curve.keys.len() {
+					self.selected_key = curve.keys.len() - 1;
+				}
+
 				ui.horizontal(|ui| {
 					ui.label(format!("{}/{}", self.selected_key + 1, curve.keys.len()));
 					if ui
@@ -2867,58 +2685,501 @@ impl AetLayerNode {
 				ui.take_available_space();
 			});
 
+		let curve_size = OnceLock::new();
+
+		let bottom_panel = egui::TopBottomPanel::bottom("CurveSelector")
+			.resizable(true)
+			.show_inside(ui, |ui| {
+				egui::ScrollArea::vertical().show(ui, |ui| {
+					fn draw_keyframes(
+						layer: &AetLayerNode,
+						ui: &mut egui::Ui,
+						resp: &egui::Response,
+						curve: &aet::FCurve,
+						curve_size: &OnceLock<(f32, f32)>,
+					) {
+						let (start, end) = curve_size.get_or_init(|| {
+							(
+								resp.rect.max.x + ui.style().spacing.item_spacing.x,
+								ui.available_width() - ui.style().spacing.item_spacing.x,
+							)
+						});
+
+						ui.painter().hline(
+							*start..=*end,
+							resp.rect.center().y,
+							egui::Stroke::new(1.5, egui::Color32::from_rgb(0xD0, 0x50, 0x60)),
+						);
+
+						if curve.keys.len() <= 1 {
+							return;
+						}
+
+						for key in &curve.keys {
+							let frame = (key.frame - layer.start_time)
+								/ (layer.end_time - layer.start_time);
+							let pos = (end - start) * frame;
+							ui.painter().circle_filled(
+								egui::pos2(start + pos, resp.rect.center().y),
+								5.0,
+								egui::Color32::from_rgba_unmultiplied(0x50, 0x60, 0xD0, 0xA0),
+							);
+						}
+					}
+
+					if let Some(audio) = &self.audio {
+						let resp = ui.selectable_label(
+							*selected_curve == Some(CurveType::VolumeL),
+							"Volume L",
+						);
+						draw_keyframes(self, ui, &resp, &audio.volume_l, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::VolumeL);
+							self.selected_key = 0;
+						}
+
+						let resp = ui.selectable_label(
+							*selected_curve == Some(CurveType::VolumeR),
+							"Volume R",
+						);
+						draw_keyframes(self, ui, &resp, &audio.volume_r, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::VolumeR);
+							self.selected_key = 0;
+						}
+
+						let resp =
+							ui.selectable_label(*selected_curve == Some(CurveType::PanL), "Pan L");
+						draw_keyframes(self, ui, &resp, &audio.pan_l, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::PanL);
+							self.selected_key = 0;
+						}
+
+						let resp =
+							ui.selectable_label(*selected_curve == Some(CurveType::PanR), "Pan R");
+						draw_keyframes(self, ui, &resp, &audio.pan_r, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::PanR);
+							self.selected_key = 0;
+						}
+					}
+
+					if let Some(video) = &self.video {
+						let resp = ui.selectable_label(
+							*selected_curve == Some(CurveType::AnchorX),
+							"Anchor X",
+						);
+						draw_keyframes(self, ui, &resp, &video.anchor_x, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::AnchorX);
+							self.selected_key = 0;
+						}
+
+						let resp = ui.selectable_label(
+							*selected_curve == Some(CurveType::AnchorY),
+							"Anchor Y",
+						);
+						draw_keyframes(self, ui, &resp, &video.anchor_y, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::AnchorY);
+							self.selected_key = 0;
+						}
+
+						if let Some(_3d) = &video._3d {
+							let resp = ui.selectable_label(
+								*selected_curve == Some(CurveType::AnchorZ),
+								"Anchor Z",
+							);
+							draw_keyframes(self, ui, &resp, &_3d.anchor_z, &curve_size);
+							if resp.clicked() {
+								*selected_curve = Some(CurveType::AnchorZ);
+								self.selected_key = 0;
+							}
+						}
+
+						let resp =
+							ui.selectable_label(*selected_curve == Some(CurveType::PosX), "Pos X");
+						draw_keyframes(self, ui, &resp, &video.pos_x, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::PosX);
+							self.selected_key = 0;
+						}
+
+						let resp =
+							ui.selectable_label(*selected_curve == Some(CurveType::PosY), "Pos Y");
+						draw_keyframes(self, ui, &resp, &video.pos_y, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::PosY);
+							self.selected_key = 0;
+						}
+
+						if let Some(_3d) = &video._3d {
+							let resp = ui.selectable_label(
+								*selected_curve == Some(CurveType::PosZ),
+								"Pos Z",
+							);
+							draw_keyframes(self, ui, &resp, &_3d.pos_z, &curve_size);
+							if resp.clicked() {
+								*selected_curve = Some(CurveType::PosZ);
+								self.selected_key = 0;
+							}
+
+							let resp = ui.selectable_label(
+								*selected_curve == Some(CurveType::DirX),
+								"Dir X",
+							);
+							draw_keyframes(self, ui, &resp, &_3d.dir_x, &curve_size);
+							if resp.clicked() {
+								*selected_curve = Some(CurveType::DirX);
+								self.selected_key = 0;
+							}
+
+							let resp = ui.selectable_label(
+								*selected_curve == Some(CurveType::DirY),
+								"Dir Y",
+							);
+							draw_keyframes(self, ui, &resp, &_3d.dir_y, &curve_size);
+							if resp.clicked() {
+								*selected_curve = Some(CurveType::DirY);
+								self.selected_key = 0;
+							}
+
+							let resp = ui.selectable_label(
+								*selected_curve == Some(CurveType::DirZ),
+								"Dir Z",
+							);
+							draw_keyframes(self, ui, &resp, &_3d.dir_z, &curve_size);
+							if resp.clicked() {
+								*selected_curve = Some(CurveType::DirZ);
+								self.selected_key = 0;
+							}
+
+							let resp = ui.selectable_label(
+								*selected_curve == Some(CurveType::RotX),
+								"Rot X",
+							);
+							draw_keyframes(self, ui, &resp, &_3d.rot_x, &curve_size);
+							if resp.clicked() {
+								*selected_curve = Some(CurveType::RotX);
+								self.selected_key = 0;
+							}
+
+							let resp = ui.selectable_label(
+								*selected_curve == Some(CurveType::RotY),
+								"Rot Y",
+							);
+							draw_keyframes(self, ui, &resp, &_3d.rot_y, &curve_size);
+							if resp.clicked() {
+								*selected_curve = Some(CurveType::RotY);
+								self.selected_key = 0;
+							}
+						}
+
+						let resp =
+							ui.selectable_label(*selected_curve == Some(CurveType::RotZ), "Rot Z");
+						draw_keyframes(self, ui, &resp, &video.rot_z, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::RotZ);
+							self.selected_key = 0;
+						}
+
+						let resp = ui.selectable_label(
+							*selected_curve == Some(CurveType::ScaleX),
+							"Scale X",
+						);
+						draw_keyframes(self, ui, &resp, &video.scale_x, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::ScaleX);
+							self.selected_key = 0;
+						}
+
+						let resp = ui.selectable_label(
+							*selected_curve == Some(CurveType::ScaleY),
+							"Scale Y",
+						);
+						draw_keyframes(self, ui, &resp, &video.scale_y, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::ScaleY);
+							self.selected_key = 0;
+						}
+
+						if let Some(_3d) = &video._3d {
+							let resp = ui.selectable_label(
+								*selected_curve == Some(CurveType::ScaleZ),
+								"Scale Z",
+							);
+							draw_keyframes(self, ui, &resp, &_3d.scale_z, &curve_size);
+							if resp.clicked() {
+								*selected_curve = Some(CurveType::ScaleZ);
+								self.selected_key = 0;
+							}
+						}
+
+						let resp = ui.selectable_label(
+							*selected_curve == Some(CurveType::Opacity),
+							"Opacity",
+						);
+						draw_keyframes(self, ui, &resp, &video.opacity, &curve_size);
+						if resp.clicked() {
+							*selected_curve = Some(CurveType::Opacity);
+							self.selected_key = 0;
+						}
+					}
+
+					ui.take_available_space();
+				});
+			});
+
+		let curve = match selected_curve {
+			None => None,
+
+			Some(selected_curve) => match selected_curve {
+				CurveType::VolumeL => self.audio.as_mut().map(|audio| &mut audio.volume_l),
+				CurveType::VolumeR => self.audio.as_mut().map(|audio| &mut audio.volume_r),
+				CurveType::PanL => self.audio.as_mut().map(|audio| &mut audio.pan_l),
+				CurveType::PanR => self.audio.as_mut().map(|audio| &mut audio.pan_r),
+
+				CurveType::AnchorX => self.video.as_mut().map(|video| &mut video.anchor_x),
+				CurveType::AnchorY => self.video.as_mut().map(|video| &mut video.anchor_y),
+				CurveType::PosX => self.video.as_mut().map(|video| &mut video.pos_x),
+				CurveType::PosY => self.video.as_mut().map(|video| &mut video.pos_y),
+				CurveType::RotZ => self.video.as_mut().map(|video| &mut video.rot_z),
+				CurveType::ScaleX => self.video.as_mut().map(|video| &mut video.scale_x),
+				CurveType::ScaleY => self.video.as_mut().map(|video| &mut video.scale_y),
+				CurveType::Opacity => self.video.as_mut().map(|video| &mut video.opacity),
+
+				CurveType::AnchorZ => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.anchor_z))
+					.flatten(),
+				CurveType::PosZ => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.pos_z))
+					.flatten(),
+				CurveType::DirX => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_x))
+					.flatten(),
+				CurveType::DirY => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_y))
+					.flatten(),
+				CurveType::DirZ => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_z))
+					.flatten(),
+				CurveType::RotX => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_x))
+					.flatten(),
+				CurveType::RotY => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_y))
+					.flatten(),
+				CurveType::ScaleZ => self
+					.video
+					.as_mut()
+					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.scale_z))
+					.flatten(),
+			},
+		};
+
+		let Some(curve) = curve else { return };
+
 		if curve.keys.len() <= 1 {
 			return;
 		}
 
-		let ids = (0..curve.keys.len())
-			.map(|i| egui::Id::new(format!("Key {}", i + 1)))
-			.collect::<Vec<_>>();
+		let mut bounds = match selected_curve.unwrap() {
+			CurveType::VolumeL => [0.0, 2.0],
+			CurveType::VolumeR => [0.0, 2.0],
+			CurveType::PanL => [-1.0, 1.0],
+			CurveType::PanR => [-1.0, 1.0],
 
-		let resp = egui_plot::Plot::new("CurveViewer")
-			.allow_drag(false)
-			.show(ui, |plot| {
-				plot.line(
-					egui_plot::Line::new(
-						"Curve",
-						egui_plot::PlotPoints::from_explicit_callback(
-							|x| curve.interpolate(x as f32) as f64,
-							(self.start_time as f64)..(self.end_time as f64 + 1.0),
-							1000,
-						),
-					)
-					.color(egui::Color32::from_rgb(0xD0, 0x50, 0x60))
-					.allow_hover(false),
-				);
+			CurveType::AnchorX => [0.0, viewport_size[0] as f64],
+			CurveType::AnchorY => [0.0, viewport_size[1] as f64],
+			CurveType::PosX => [0.0, viewport_size[0] as f64],
+			CurveType::PosY => [0.0, viewport_size[1] as f64],
+			CurveType::RotZ => [0.0, 360.0],
+			CurveType::ScaleX => [0.0, 2.0],
+			CurveType::ScaleY => [0.0, 2.0],
+			CurveType::Opacity => [0.0, 1.0],
 
-				if frame >= self.start_time && frame <= self.end_time {
-					plot.vline(egui_plot::VLine::new("CurrentTime", frame).allow_hover(false));
-				}
+			CurveType::AnchorZ => [-1.0, 1.0],
+			CurveType::PosZ => [-1.0, 1.0],
+			CurveType::DirX => [0.0, 360.0],
+			CurveType::DirY => [0.0, 360.0],
+			CurveType::DirZ => [0.0, 360.0],
+			CurveType::RotX => [0.0, 360.0],
+			CurveType::RotY => [0.0, 360.0],
+			CurveType::ScaleZ => [0.0, 2.0],
+		};
 
-				for (name, value) in &self.markers {
-					plot.vline(egui_plot::VLine::new(name, *value));
-				}
+		let min = curve
+			.keys
+			.iter()
+			.map(|key| key.value as f64)
+			.reduce(f64::min)
+			.unwrap_or(0.0);
 
-				for (i, key) in curve.keys.iter().enumerate() {
-					plot.points(
-						egui_plot::Points::new(
-							format!("Key {}", i + 1),
-							vec![[key.frame as f64, key.value as f64]],
-						)
-						.id(ids[i])
-						.color(egui::Color32::from_rgba_unmultiplied(
-							0x50, 0x60, 0xD0, 0xA0,
-						))
-						.radius(5.0),
-					);
-				}
-			});
+		let max = curve
+			.keys
+			.iter()
+			.map(|key| key.value as f64)
+			.reduce(f64::max)
+			.unwrap_or(0.0);
 
-		if resp.response.clicked()
-			&& let Some(hovered) = resp.hovered_plot_item
-			&& let Some(index) = ids.iter().position(|id| *id == hovered)
+		let max_decimals = if bounds[1] > 1.0 { 0 } else { 2 };
+
+		if min < bounds[0] {
+			bounds[0] = min;
+		}
+
+		if max > bounds[1] {
+			bounds[1] = max;
+		}
+
+		let mut rect = ui
+			.allocate_space(ui.available_size())
+			.1
+			.shrink(ui.text_style_height(&egui::TextStyle::Body));
+
+		if rect.height() < 50.0 + bottom_panel.response.rect.height() {
+			rect = ui
+				.allocate_space(egui::vec2(
+					100.0,
+					50.0 + bottom_panel.response.rect.height(),
+				))
+				.1;
+		}
+
+		let line_stroke = egui::Stroke::new(1.0, egui::Color32::GRAY);
+
+		ui.painter().text(
+			egui::pos2(rect.min.x, rect.max.y),
+			egui::Align2::LEFT_CENTER,
+			format!("{:.1$}", bounds[0], max_decimals),
+			egui::FontSelection::Default.resolve(ui.style()),
+			egui::Color32::GRAY,
+		);
+
+		let (curve_start, curve_end) = curve_size.get().unwrap();
+
+		ui.painter()
+			.hline(*curve_start..=*curve_end, rect.max.y, line_stroke);
+
+		for i in 1..=4 {
+			let y = rect.max.y - rect.height() * (i as f32 / 4.0);
+
+			ui.painter().text(
+				egui::pos2(rect.min.x, y),
+				egui::Align2::LEFT_CENTER,
+				format!(
+					"{:.1$}",
+					(bounds[1] - bounds[0]) * (i as f64 / 4.0) + bounds[0],
+					max_decimals
+				),
+				egui::FontSelection::Default.resolve(ui.style()),
+				egui::Color32::GRAY,
+			);
+
+			ui.painter()
+				.hline(*curve_start..=*curve_end, y, line_stroke);
+		}
+
+		rect.min.x = *curve_start;
+		rect.max.x = *curve_end;
+
 		{
-			self.selected_key = index;
+			let plot = egui_plot::PlotTransform::new(
+				rect,
+				egui_plot::PlotBounds::from_min_max(
+					[self.start_time as f64, bounds[0]],
+					[self.end_time as f64, bounds[1]],
+				),
+				[false, false],
+			);
+
+			let mut curve = curve.clone();
+			curve.keys.sort_by(|a, b| a.frame.total_cmp(&b.frame));
+
+			let mut line = egui_plot::Line::new(
+				String::new(),
+				egui_plot::PlotPoints::from_explicit_callback(
+					|x| curve.interpolate(x as f32) as f64,
+					(self.start_time as f64)..=(self.end_time as f64),
+					1000,
+				),
+			)
+			.color(egui::Color32::from_rgb(0xD0, 0x50, 0x60));
+			line.initialize((self.start_time as f64)..=(self.end_time as f64));
+
+			let mut shapes = Vec::new();
+			line.shapes(&ui, &plot, &mut shapes);
+			ui.painter().add(shapes);
+		}
+
+		let mut want_order = false;
+		for (i, key) in curve.keys.iter_mut().enumerate() {
+			let x_pos =
+				rect.width() * (key.frame - self.start_time) / (self.end_time - self.start_time);
+			let y_pos = rect.height() * (key.value - bounds[0] as f32)
+				/ (bounds[1] as f32 - bounds[0] as f32);
+			let pos = egui::pos2(rect.min.x + x_pos, rect.max.y - y_pos);
+			ui.painter().circle_filled(
+				pos,
+				5.0,
+				egui::Color32::from_rgba_unmultiplied(0x50, 0x60, 0xD0, 0xA0),
+			);
+
+			let resp = ui.interact(
+				egui::Rect {
+					min: pos - egui::Vec2::splat(2.5),
+					max: pos + egui::Vec2::splat(2.5),
+				},
+				ui.auto_id_with(format!("key{i}")),
+				egui::Sense::click_and_drag(),
+			);
+
+			if resp.clicked() {
+				self.selected_key = i;
+			} else if resp.dragged()
+				&& let Some(pos) = resp.interact_pointer_pos()
+			{
+				let pos = pos.clamp(rect.min, rect.max);
+				let x_pos = pos.x - rect.min.x;
+				let y_pos = -(pos.y - rect.max.y);
+				key.frame =
+					x_pos * (self.end_time - self.start_time) / rect.width() + self.start_time;
+				key.value = y_pos * (bounds[1] as f32 - bounds[0] as f32) / rect.height()
+					+ bounds[0] as f32;
+			} else if resp.drag_stopped() {
+				want_order = true;
+			}
+		}
+
+		if want_order {
+			curve.keys.sort_by(|a, b| a.frame.total_cmp(&b.frame));
+		}
+
+		if frame >= self.start_time && frame <= self.end_time {
+			ui.painter().vline(
+				rect.min.x
+					+ rect.width() * (frame - self.start_time) / (self.end_time - self.start_time),
+				rect.min.y..=rect.max.y,
+				egui::Stroke::new(
+					1.0,
+					egui::Color32::from_rgba_unmultiplied(0xD0, 0x50, 0x60, 0xA0),
+				),
+			);
 		}
 	}
 
