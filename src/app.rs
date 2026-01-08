@@ -1262,7 +1262,9 @@ impl eframe::App for App {
 
 		if self.help_modal {
 			egui::Modal::new(egui::Id::new("HelpModal")).show(ctx, |ui| {
-				ui.label(egui::RichText::new("Shortcuts").size(20.0));
+				ui.vertical_centered(|ui| {
+					ui.label(egui::RichText::new("Shortcuts").size(20.0));
+				});
 
 				let height = ui.text_style_height(&egui::TextStyle::Body);
 				egui_extras::TableBuilder::new(ui)

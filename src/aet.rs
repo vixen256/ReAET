@@ -2224,15 +2224,31 @@ impl TreeNode for AetLayerNode {
 							egui::ComboBox::from_id_salt("BlendModeComboBox")
 								.selected_text(format!("{:?}", video.transfer_mode.mode))
 								.show_ui(ui, |ui| {
-									for i in 0..40 {
-										let blend_mode =
-											unsafe { std::mem::transmute::<u8, aet::BlendMode>(i) };
-										ui.selectable_value(
-											&mut video.transfer_mode.mode,
-											blend_mode,
-											format!("{:?}", blend_mode),
-										);
-									}
+									ui.selectable_value(
+										&mut video.transfer_mode.mode,
+										aet::BlendMode::Normal,
+										format!("{:?}", aet::BlendMode::Normal),
+									);
+									ui.selectable_value(
+										&mut video.transfer_mode.mode,
+										aet::BlendMode::Add,
+										format!("{:?}", aet::BlendMode::Add),
+									);
+									ui.selectable_value(
+										&mut video.transfer_mode.mode,
+										aet::BlendMode::Multiply,
+										format!("{:?}", aet::BlendMode::Multiply),
+									);
+									ui.selectable_value(
+										&mut video.transfer_mode.mode,
+										aet::BlendMode::Screen,
+										format!("{:?}", aet::BlendMode::Screen),
+									);
+									ui.selectable_value(
+										&mut video.transfer_mode.mode,
+										aet::BlendMode::Overlay,
+										format!("{:?}", aet::BlendMode::Overlay),
+									);
 								});
 						});
 					});
