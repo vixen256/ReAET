@@ -633,7 +633,10 @@ impl AetSceneNode {
 					])
 					.into(),
 					viewport: rect,
-					modes: GizmoMode::TranslateX | GizmoMode::TranslateY | GizmoMode::RotateZ,
+					modes: GizmoMode::TranslateX
+						| GizmoMode::TranslateY
+						| GizmoMode::TranslateView
+						| GizmoMode::RotateZ,
 					snapping: true,
 					snap_distance: 5.0,
 					..Default::default()
@@ -676,7 +679,7 @@ impl AetSceneNode {
 								{
 									key.value += delta.x as f32;
 								} else {
-									video.pos_x.keys[0].value += delta.x as f32;
+									video.pos_x.keys[0].value += delta.x as f32 / m.x.x;
 								}
 
 								if let Some(key) = video
@@ -689,15 +692,15 @@ impl AetSceneNode {
 								{
 									key.value += delta.y as f32;
 								} else {
-									video.pos_y.keys[0].value += delta.y as f32;
+									video.pos_y.keys[0].value += delta.y as f32 / m.y.y;
 								}
 							} else {
 								for key in &mut video.pos_x.keys {
-									key.value += delta.x as f32;
+									key.value += delta.x as f32 / m.x.x;
 								}
 
 								for key in &mut video.pos_y.keys {
-									key.value += -delta.y as f32;
+									key.value += -delta.y as f32 / m.y.y;
 								}
 							}
 						}
