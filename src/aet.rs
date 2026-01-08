@@ -691,9 +691,9 @@ impl AetSceneNode {
 									.skip_while(|key| key.frame >= frame + 1.001)
 									.next()
 								{
-									key.value += delta.y as f32;
+									key.value += -delta.y as f32;
 								} else {
-									video.pos_y.keys[0].value += delta.y as f32 / m.y.y;
+									video.pos_y.keys[0].value += -delta.y as f32 / m.y.y;
 								}
 							} else {
 								for key in &mut video.pos_x.keys {
@@ -2681,8 +2681,6 @@ impl AetLayerNode {
 					ui.label("Tangent");
 					crate::app::num_edit(ui, &mut curve.keys[self.selected_key].tangent, 2);
 				});
-
-				ui.take_available_space();
 			});
 
 		let curve_size = OnceLock::new();
@@ -2926,8 +2924,6 @@ impl AetLayerNode {
 							self.selected_key = 0;
 						}
 					}
-
-					ui.take_available_space();
 				});
 			});
 
@@ -3127,7 +3123,7 @@ impl AetLayerNode {
 			ui.painter().add(shapes);
 		}
 
-		let mut want_order = false;
+		let mut want_sort = false;
 		for (i, key) in curve.keys.iter_mut().enumerate() {
 			let x_pos =
 				rect.width() * (key.frame - self.start_time) / (self.end_time - self.start_time);
@@ -3162,11 +3158,11 @@ impl AetLayerNode {
 				key.value = y_pos * (bounds[1] as f32 - bounds[0] as f32) / rect.height()
 					+ bounds[0] as f32;
 			} else if resp.drag_stopped() {
-				want_order = true;
+				want_sort = true;
 			}
 		}
 
-		if want_order {
+		if want_sort {
 			curve.keys.sort_by(|a, b| a.frame.total_cmp(&b.frame));
 		}
 

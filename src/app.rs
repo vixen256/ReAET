@@ -1218,19 +1218,25 @@ impl eframe::App for App {
 
 					self.multi_select.clear();
 				}
-			}
 
-			if !self.multi_select.is_empty() {
-				if input.key_pressed(egui::Key::Delete)
-					|| self
-						.multi_select
-						.iter()
-						.any(|layer| layer.try_lock().unwrap().want_deletion)
-				{
-					for layer in &mut self.multi_select {
-						layer.try_lock().unwrap().want_deletion = true;
+				if !self.multi_select.is_empty() {
+					if input.key_pressed(egui::Key::Delete)
+						|| self
+							.multi_select
+							.iter()
+							.any(|layer| layer.try_lock().unwrap().want_deletion)
+					{
+						for layer in &mut self.multi_select {
+							layer.try_lock().unwrap().want_deletion = true;
+						}
+						self.multi_select.clear();
 					}
-					self.multi_select.clear();
+				} else if self.selected.len() >= 3
+					&& self.selected[0] == 0
+					&& input.key_pressed(egui::Key::Delete)
+				{
+					let layer = get_selected_layer(aet_set, &self.selected);
+					layer.try_lock().unwrap().want_deletion = true;
 				}
 			}
 		});
