@@ -225,6 +225,7 @@ pub struct App {
 	file_picker_result: Option<mpsc::Receiver<Option<(std::path::PathBuf, Vec<u8>)>>>,
 
 	modern_writing_modal: bool,
+	help_modal: bool,
 
 	undoer: LayerUndoer,
 }
@@ -259,6 +260,7 @@ impl App {
 			multi_select: Vec::new(),
 			file_picker_result: None,
 			modern_writing_modal: false,
+			help_modal: false,
 			undoer: LayerUndoer::new(),
 		})
 	}
@@ -1258,6 +1260,93 @@ impl eframe::App for App {
 			});
 		}
 
+		if self.help_modal {
+			egui::Modal::new(egui::Id::new("HelpModal")).show(ctx, |ui| {
+				ui.label(egui::RichText::new("Shortcuts").size(20.0));
+
+				let height = ui.text_style_height(&egui::TextStyle::Body);
+				egui_extras::TableBuilder::new(ui)
+					.column(egui_extras::Column::remainder())
+					.column(egui_extras::Column::remainder())
+					.body(|mut body| {
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Open file");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&OPEN_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Save file");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&SAVE_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Save file to");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&SAVE_TO_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Close file");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&CLOSE_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Undo");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&UNDO_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Redo");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&REDO_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Insert keyframe");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
+									modifiers: egui::Modifiers::COMMAND,
+									logical_key: egui::Key::I,
+								}));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Only move current keyframe");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_modifiers(egui::Modifiers::CTRL));
+							});
+						});
+					});
+			});
+		}
+
 		if let Some(aet_set) = &self.aet_set {
 			if self.multi_select.is_empty() {
 				self.undoer
@@ -1418,6 +1507,10 @@ impl eframe::App for App {
 						);
 					}
 				});
+
+				if ui.button("Help").clicked() {
+					self.help_modal = true;
+				}
 			});
 		});
 
