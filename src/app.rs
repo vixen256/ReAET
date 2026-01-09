@@ -1244,7 +1244,7 @@ impl eframe::App for App {
 		});
 
 		if self.modern_writing_modal {
-			egui::Modal::new(egui::Id::new("ModernWritingModal")).show(ctx, |ui| {
+			let modal = egui::Modal::new(egui::Id::new("ModernWritingModal")).show(ctx, |ui| {
 				ui.vertical_centered(|ui| {
 					ui.label(
 						egui::RichText::new(
@@ -1254,14 +1254,18 @@ impl eframe::App for App {
 						.color(egui::Color32::RED),
 					);
 					if ui.button("Close").clicked() {
-						self.modern_writing_modal = false;
+						ui.close();
 					}
 				});
 			});
+
+			if modal.should_close() {
+				self.modern_writing_modal = false;
+			}
 		}
 
 		if self.help_modal {
-			egui::Modal::new(egui::Id::new("HelpModal")).show(ctx, |ui| {
+			let modal = egui::Modal::new(egui::Id::new("HelpModal")).show(ctx, |ui| {
 				ui.vertical_centered(|ui| {
 					ui.label(egui::RichText::new("Shortcuts").size(20.0));
 				});
@@ -1346,7 +1350,17 @@ impl eframe::App for App {
 							});
 						});
 					});
+
+				ui.vertical_centered(|ui| {
+					if ui.button("Close").clicked() {
+						ui.close();
+					}
+				});
 			});
+
+			if modal.should_close() {
+				self.help_modal = false;
+			}
 		}
 
 		if let Some(aet_set) = &self.aet_set {
