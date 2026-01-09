@@ -670,27 +670,43 @@ impl AetSceneNode {
 							}
 
 							if ui.input(|i| i.modifiers.ctrl) {
-								if let Some(key) = video
-									.pos_x
-									.keys
-									.iter_mut()
-									.rev()
-									.skip_while(|key| key.frame >= frame + 1.001)
-									.next()
-								{
+								if let Some(key) =
+									video
+										.pos_x
+										.keys
+										.iter_mut()
+										.rev()
+										.reduce(|previous, current| {
+											if previous.frame
+												- frame - (previous.frame - current.frame) / 2.0
+												> 0.0
+											{
+												current
+											} else {
+												previous
+											}
+										}) {
 									key.value += delta.x as f32;
 								} else {
 									video.pos_x.keys[0].value += delta.x as f32 / m.x.x;
 								}
 
-								if let Some(key) = video
-									.pos_y
-									.keys
-									.iter_mut()
-									.rev()
-									.skip_while(|key| key.frame >= frame + 1.001)
-									.next()
-								{
+								if let Some(key) =
+									video
+										.pos_y
+										.keys
+										.iter_mut()
+										.rev()
+										.reduce(|previous, current| {
+											if previous.frame
+												- frame - (previous.frame - current.frame) / 2.0
+												> 0.0
+											{
+												current
+											} else {
+												previous
+											}
+										}) {
 									key.value += -delta.y as f32;
 								} else {
 									video.pos_y.keys[0].value += -delta.y as f32 / m.y.y;
@@ -720,14 +736,22 @@ impl AetSceneNode {
 							}
 
 							if ui.input(|i| i.modifiers.ctrl) {
-								if let Some(key) = video
-									.pos_x
-									.keys
-									.iter_mut()
-									.rev()
-									.skip_while(|key| key.frame >= frame + 1.001)
-									.next()
-								{
+								if let Some(key) =
+									video
+										.rot_z
+										.keys
+										.iter_mut()
+										.rev()
+										.reduce(|previous, current| {
+											if previous.frame
+												- frame - (previous.frame - current.frame) / 2.0
+												> 0.0
+											{
+												current
+											} else {
+												previous
+											}
+										}) {
 									key.value -= delta.to_degrees() as f32;
 								} else {
 									video.rot_z.keys[0].value -= delta.to_degrees() as f32;
@@ -2722,7 +2746,7 @@ impl AetLayerNode {
 						ui.painter().hline(
 							*start..=*end,
 							resp.rect.center().y,
-							egui::Stroke::new(1.5, egui::Color32::from_rgb(0xD0, 0x50, 0x60)),
+							egui::Stroke::new(1.5, egui::Color32::from_rgb(0x10, 0x60, 0xE0)),
 						);
 
 						if curve.keys.len() <= 1 {
@@ -2736,7 +2760,7 @@ impl AetLayerNode {
 							ui.painter().circle_filled(
 								egui::pos2(start + pos, resp.rect.center().y),
 								5.0,
-								egui::Color32::from_rgba_unmultiplied(0x50, 0x60, 0xD0, 0xA0),
+								egui::Color32::from_rgba_unmultiplied(0xF0, 0xB0, 0x20, 0xA0),
 							);
 						}
 					}
@@ -2940,6 +2964,8 @@ impl AetLayerNode {
 							self.selected_key = 0;
 						}
 					}
+
+					ui.take_available_space();
 				});
 			});
 
@@ -3064,11 +3090,11 @@ impl AetLayerNode {
 			.1
 			.shrink(ui.text_style_height(&egui::TextStyle::Body));
 
-		if rect.height() < 50.0 + bottom_panel.response.rect.height() {
+		if rect.height() < 25.0 + bottom_panel.response.rect.height() {
 			rect = ui
 				.allocate_space(egui::vec2(
 					100.0,
-					50.0 + bottom_panel.response.rect.height(),
+					25.0 + bottom_panel.response.rect.height(),
 				))
 				.1;
 		}
@@ -3131,7 +3157,7 @@ impl AetLayerNode {
 					1000,
 				),
 			)
-			.color(egui::Color32::from_rgb(0xD0, 0x50, 0x60));
+			.color(egui::Color32::from_rgb(0x10, 0x60, 0xE0));
 			line.initialize((self.start_time as f64)..=(self.end_time as f64));
 
 			let mut shapes = Vec::new();
@@ -3149,7 +3175,7 @@ impl AetLayerNode {
 			ui.painter().circle_filled(
 				pos,
 				5.0,
-				egui::Color32::from_rgba_unmultiplied(0x50, 0x60, 0xD0, 0xA0),
+				egui::Color32::from_rgba_unmultiplied(0xF0, 0xB0, 0x20, 0xA0),
 			);
 
 			let resp = ui.interact(
