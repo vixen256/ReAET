@@ -621,37 +621,25 @@ impl TreeNode for TextureNode {
 		let callback_resources = render_state.renderer.read();
 		let resources: &WgpuRenderResources = callback_resources.callback_resources.get().unwrap();
 
-		let (tl, tr, bl, br) = ([-1.0, 1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, -1.0]);
-
 		let verticies = [
 			Vertex {
-				position: tr,
-				tex_coords: [1.0, 1.0],
-				matte_tex_coords: [0.0, 0.0],
-			},
-			Vertex {
-				position: bl,
-				tex_coords: [0.0, 0.0],
-				matte_tex_coords: [0.0, 0.0],
-			},
-			Vertex {
-				position: br,
-				tex_coords: [1.0, 0.0],
-				matte_tex_coords: [0.0, 0.0],
-			},
-			Vertex {
-				position: tl,
+				position: [-1.0, 1.0],
 				tex_coords: [0.0, 1.0],
 				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
-				position: bl,
+				position: [1.0, 1.0],
+				tex_coords: [1.0, 1.0],
+				matte_tex_coords: [0.0, 0.0],
+			},
+			Vertex {
+				position: [-1.0, -1.0],
 				tex_coords: [0.0, 0.0],
 				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
-				position: tr,
-				tex_coords: [1.0, 1.0],
+				position: [1.0, -1.0],
+				tex_coords: [1.0, 0.0],
 				matte_tex_coords: [0.0, 0.0],
 			},
 		];
@@ -672,7 +660,7 @@ impl TreeNode for TextureNode {
 		};
 
 		render_state.queue.write_buffer(
-			&resources.uniform_buffers[0].0,
+			&resources.uniform_buffer,
 			0,
 			bytemuck::cast_slice(&[video_info]),
 		);
@@ -747,9 +735,10 @@ impl egui_wgpu::CallbackTrait for WgpuTextureCallback {
 			&[],
 		);
 		render_pass.set_bind_group(2, &texture.empty_texture, &[]);
-		render_pass.set_bind_group(3, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_bind_group(3, &resources.uniform_buffer_group, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-		render_pass.draw(0..6, 0..1);
+		render_pass.set_index_buffer(resources.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+		render_pass.draw_indexed(0..6, 0, 0..1);
 	}
 }
 
@@ -763,7 +752,9 @@ pub struct WgpuRenderResources {
 	pub video_bind_group_layout: wgpu::BindGroupLayout,
 	pub sampler: wgpu::BindGroup,
 	pub vertex_buffer: wgpu::Buffer,
-	pub uniform_buffers: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
+	pub index_buffer: wgpu::Buffer,
+	pub uniform_buffer: wgpu::Buffer,
+	pub uniform_buffer_group: wgpu::BindGroup,
 }
 
 pub struct WgpuRenderTextures {
@@ -1001,6 +992,11 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		label: Some("Vertex buffer"),
 		contents: bytemuck::cast_slice(&[
 			Vertex {
+				position: [-1.0, 1.0],
+				tex_coords: [0.0, 0.0],
+				matte_tex_coords: [0.0, 0.0],
+			},
+			Vertex {
 				position: [1.0, 1.0],
 				tex_coords: [0.0, 0.0],
 				matte_tex_coords: [0.0, 0.0],
@@ -1015,26 +1011,17 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 				tex_coords: [0.0, 0.0],
 				matte_tex_coords: [0.0, 0.0],
 			},
-			Vertex {
-				position: [-1.0, 1.0],
-				tex_coords: [0.0, 0.0],
-				matte_tex_coords: [0.0, 0.0],
-			},
-			Vertex {
-				position: [-1.0, -1.0],
-				tex_coords: [0.0, 0.0],
-				matte_tex_coords: [0.0, 0.0],
-			},
-			Vertex {
-				position: [1.0, 1.0],
-				tex_coords: [0.0, 0.0],
-				matte_tex_coords: [0.0, 0.0],
-			},
 		]),
 		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
 	});
 
-	let base_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+	let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+		label: Some("Index buffer"),
+		contents: bytemuck::cast_slice(&[1u32, 2u32, 3u32, 0u32, 2u32, 1u32]),
+		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX,
+	});
+
+	let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 		label: Some("Video uniform buffer 0"),
 		contents: bytemuck::cast_slice(&[VideoInfo {
 			matrix: crate::aet::Mat4::default().into(),
@@ -1051,7 +1038,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		layout: &video_bind_group_layout,
 		entries: &[wgpu::BindGroupEntry {
 			binding: 0,
-			resource: base_uniform_buffer.as_entire_binding(),
+			resource: uniform_buffer.as_entire_binding(),
 		}],
 		label: Some("Uniform bind group 0"),
 	});
@@ -1083,7 +1070,9 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			texture_bind_group_layout,
 			video_bind_group_layout,
 			vertex_buffer,
-			uniform_buffers: vec![(base_uniform_buffer, uniform_buffer_group)],
+			index_buffer,
+			uniform_buffer,
+			uniform_buffer_group,
 			sampler,
 		});
 }

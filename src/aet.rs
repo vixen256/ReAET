@@ -3340,8 +3340,11 @@ struct WgpuAetSpriteInfo {
 }
 
 struct WgpuSpriteInfos {
-	sprites: BTreeMap<u32, wgpu::Buffer>,
-	matte_sprites: Vec<wgpu::Buffer>,
+	vertex_buffer: wgpu::Buffer,
+	uniform_buffer: wgpu::Buffer,
+	uniform_buffer_views: Vec<wgpu::BindGroup>,
+	sprites: BTreeMap<u32, i32>,
+	matte_sprites: Vec<i32>,
 }
 
 impl egui_wgpu::CallbackTrait for WgpuAetVideos {
@@ -3353,125 +3356,136 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		_egui_encoder: &mut wgpu::CommandEncoder,
 		callback_resources: &mut egui_wgpu::CallbackResources,
 	) -> Vec<wgpu::CommandBuffer> {
+		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
+		let video_bind_group_layout = resources.video_bind_group_layout.clone();
+		let video_size = std::mem::size_of::<VideoInfo>()
+			.next_multiple_of(device.limits().min_uniform_buffer_offset_alignment as usize);
+
 		if callback_resources.get::<WgpuSpriteInfos>().is_none() {
+			let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+				label: Some(&format!("Uniform buffer")),
+				size: video_size as wgpu::BufferAddress * 256,
+				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+				mapped_at_creation: false,
+			});
 			callback_resources.insert(WgpuSpriteInfos {
+				vertex_buffer: device.create_buffer(&wgpu::BufferDescriptor {
+					label: Some(&format!("Vertex buffer")),
+					size: std::mem::size_of::<Vertex>() as wgpu::BufferAddress * 4 * 256,
+					usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+					mapped_at_creation: false,
+				}),
+				uniform_buffer_views: (0..256)
+					.map(|i| {
+						device.create_bind_group(&wgpu::BindGroupDescriptor {
+							layout: &video_bind_group_layout,
+							entries: &[wgpu::BindGroupEntry {
+								binding: 0,
+								resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+									buffer: &uniform_buffer,
+									offset: i as wgpu::BufferAddress
+										* video_size as wgpu::BufferAddress,
+									size: unsafe {
+										Some(wgpu::BufferSize::new_unchecked(
+											video_size as wgpu::BufferAddress,
+										))
+									},
+								}),
+							}],
+							label: Some(&format!("Uniform bind group {i}")),
+						})
+					})
+					.collect(),
+				uniform_buffer,
 				sprites: BTreeMap::new(),
 				matte_sprites: Vec::new(),
 			});
 		}
 
 		let wgpu_sprite_infos: &mut WgpuSpriteInfos = callback_resources.get_mut().unwrap();
-		let (tl, tr, bl, br) = ([-1.0, 1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, -1.0]);
-		for (id, sprite) in self.sprites.iter().map(|(id, sprite)| {
-			(
-				id,
-				[
-					Vertex {
-						position: tr,
-						tex_coords: sprite.texture_coords[1],
-						matte_tex_coords: [0.0, 0.0],
-					},
-					Vertex {
-						position: bl,
-						tex_coords: sprite.texture_coords[2],
-						matte_tex_coords: [0.0, 0.0],
-					},
-					Vertex {
-						position: br,
-						tex_coords: sprite.texture_coords[3],
-						matte_tex_coords: [0.0, 0.0],
-					},
-					Vertex {
-						position: tl,
-						tex_coords: sprite.texture_coords[0],
-						matte_tex_coords: [0.0, 0.0],
-					},
-					Vertex {
-						position: bl,
-						tex_coords: sprite.texture_coords[2],
-						matte_tex_coords: [0.0, 0.0],
-					},
-					Vertex {
-						position: tr,
-						tex_coords: sprite.texture_coords[1],
-						matte_tex_coords: [0.0, 0.0],
-					},
-				],
-			)
-		}) {
-			if !wgpu_sprite_infos.sprites.contains_key(id) {
-				let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-					label: Some(&format!("Vertex buffer {id}")),
-					size: std::mem::size_of::<Vertex>() as wgpu::BufferAddress * 6,
-					usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
-					mapped_at_creation: false,
-				});
-				wgpu_sprite_infos.sprites.insert(*id, buffer);
-			}
+		wgpu_sprite_infos.sprites.clear();
+		wgpu_sprite_infos.matte_sprites.clear();
 
-			queue.write_buffer(
-				&wgpu_sprite_infos.sprites.get(id).unwrap(),
-				0,
-				bytemuck::cast_slice(&sprite),
-			);
-		}
+		let sprites = self.sprites.iter().enumerate().map(|(i, (id, sprite))| {
+			let index = i as i32 * 4;
+			wgpu_sprite_infos.sprites.insert(*id, index);
+			[
+				Vertex {
+					position: [-1.0, 1.0],
+					tex_coords: sprite.texture_coords[0],
+					matte_tex_coords: [0.0, 0.0],
+				},
+				Vertex {
+					position: [1.0, 1.0],
+					tex_coords: sprite.texture_coords[1],
+					matte_tex_coords: [0.0, 0.0],
+				},
+				Vertex {
+					position: [-1.0, -1.0],
+					tex_coords: sprite.texture_coords[2],
+					matte_tex_coords: [0.0, 0.0],
+				},
+				Vertex {
+					position: [1.0, -1.0],
+					tex_coords: sprite.texture_coords[3],
+					matte_tex_coords: [0.0, 0.0],
+				},
+			]
+		});
 
-		for i in wgpu_sprite_infos.matte_sprites.len()..self.matte_sprites.len() {
-			let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-				label: Some(&format!("Matte Vertex buffer {i}")),
-				size: std::mem::size_of::<Vertex>() as wgpu::BufferAddress * 6,
-				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
-				mapped_at_creation: false,
-			});
-			wgpu_sprite_infos.matte_sprites.push(buffer);
-		}
-
-		for ((base, matte), buffer) in self
+		let matte_sprites = self
 			.matte_sprites
 			.iter()
-			.zip(wgpu_sprite_infos.matte_sprites.iter_mut())
-		{
-			queue.write_buffer(
-				&buffer,
-				0,
-				bytemuck::cast_slice(&[
+			.enumerate()
+			.map(|(i, (base, matte))| {
+				let index = (self.sprites.len() as i32 + i as i32) * 4;
+				wgpu_sprite_infos.matte_sprites.push(index);
+				[
 					Vertex {
-						position: tr,
-						tex_coords: base.texture_coords[1],
-						matte_tex_coords: matte.texture_coords[1],
-					},
-					Vertex {
-						position: bl,
-						tex_coords: base.texture_coords[2],
-						matte_tex_coords: matte.texture_coords[2],
-					},
-					Vertex {
-						position: br,
-						tex_coords: base.texture_coords[3],
-						matte_tex_coords: matte.texture_coords[3],
-					},
-					Vertex {
-						position: tl,
+						position: [-1.0, 1.0],
 						tex_coords: base.texture_coords[0],
 						matte_tex_coords: matte.texture_coords[0],
 					},
 					Vertex {
-						position: bl,
+						position: [1.0, 1.0],
+						tex_coords: base.texture_coords[1],
+						matte_tex_coords: matte.texture_coords[1],
+					},
+					Vertex {
+						position: [-1.0, -1.0],
 						tex_coords: base.texture_coords[2],
 						matte_tex_coords: matte.texture_coords[2],
 					},
 					Vertex {
-						position: tr,
-						tex_coords: base.texture_coords[1],
-						matte_tex_coords: matte.texture_coords[1],
+						position: [1.0, -1.0],
+						tex_coords: base.texture_coords[3],
+						matte_tex_coords: matte.texture_coords[3],
 					},
-				]),
-			);
+				]
+			});
+
+		let verticies = sprites.chain(matte_sprites).collect::<Vec<_>>();
+		if verticies.len() as wgpu::BufferAddress
+			* std::mem::size_of::<Vertex>() as wgpu::BufferAddress
+			* 4 > wgpu_sprite_infos.vertex_buffer.size()
+		{
+			wgpu_sprite_infos.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+				label: Some(&format!("Vertex buffer")),
+				size: verticies.len().next_power_of_two() as wgpu::BufferAddress
+					* std::mem::size_of::<Vertex>() as wgpu::BufferAddress
+					* 4,
+				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+				mapped_at_creation: false,
+			});
 		}
 
-		let mut video_infos = Vec::new();
+		queue.write_buffer(
+			&wgpu_sprite_infos.vertex_buffer,
+			0,
+			bytemuck::cast_slice(&verticies),
+		);
 
-		video_infos.push(VideoInfo {
+		let video_infos = [VideoInfo {
 			matrix: crate::aet::Mat4::default().into(),
 			color: [
 				self.background_color[0],
@@ -3483,11 +3497,10 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			_padding_0: 0,
 			_padding_1: 0,
 			_padding_2: 0,
-		});
-
-		video_infos.extend(self.videos.iter().map(|video| {
+		}]
+		.into_iter()
+		.chain(self.videos.iter().map(|video| {
 			let mut m = video.mat;
-			// Offset to match intended position
 			m.w =
 				m.x * (video.source_size[0] / 2.0) + m.y * (video.source_size[1] / 2.0) + m.z + m.w;
 
@@ -3530,37 +3543,51 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				_padding_1: 0,
 				_padding_2: 0,
 			}
-		}));
+		}))
+		.collect::<Vec<_>>();
 
-		let resources: &mut WgpuRenderResources = callback_resources.get_mut().unwrap();
-
-		for i in resources.uniform_buffers.len()..video_infos.len() {
-			let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-				label: Some(&format!("Uniform buffer {i}")),
-				size: std::mem::size_of::<VideoInfo>() as wgpu::BufferAddress,
+		if video_infos.len() as wgpu::BufferAddress * video_size as wgpu::BufferAddress
+			> wgpu_sprite_infos.uniform_buffer.size()
+		{
+			wgpu_sprite_infos.uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+				label: Some(&format!("Uniform buffer")),
+				size: video_infos.len().next_power_of_two() as wgpu::BufferAddress
+					* video_size as wgpu::BufferAddress,
 				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
 				mapped_at_creation: false,
 			});
 
-			let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-				layout: &resources.video_bind_group_layout,
-				entries: &[wgpu::BindGroupEntry {
-					binding: 0,
-					resource: buffer.as_entire_binding(),
-				}],
-				label: Some(&format!("Uniform bind group {i}")),
-			});
-
-			resources.uniform_buffers.push((buffer, bind_group));
+			wgpu_sprite_infos.uniform_buffer_views = (0..video_infos.len().next_power_of_two())
+				.map(|i| {
+					device.create_bind_group(&wgpu::BindGroupDescriptor {
+						layout: &video_bind_group_layout,
+						entries: &[wgpu::BindGroupEntry {
+							binding: 0,
+							resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+								buffer: &wgpu_sprite_infos.uniform_buffer,
+								offset: i as wgpu::BufferAddress
+									* video_size as wgpu::BufferAddress,
+								size: unsafe {
+									Some(wgpu::BufferSize::new_unchecked(
+										video_size as wgpu::BufferAddress,
+									))
+								},
+							}),
+						}],
+						label: Some(&format!("Uniform bind group {i}")),
+					})
+				})
+				.collect();
 		}
 
-		for i in 0..video_infos.len() {
-			queue.write_buffer(
-				&resources.uniform_buffers[i].0,
-				0,
-				bytemuck::cast_slice(&[video_infos[i]]),
-			);
+		let mut bytes = Vec::with_capacity(video_size * video_infos.len());
+		bytes.resize(video_size * video_infos.len(), 0);
+		for (i, video) in video_infos.iter().enumerate() {
+			bytes[(i * video_size)..(i * video_size + std::mem::size_of::<VideoInfo>())]
+				.copy_from_slice(bytemuck::bytes_of(video));
 		}
+
+		queue.write_buffer(&wgpu_sprite_infos.uniform_buffer, 0, &bytes);
 
 		Vec::new()
 	}
@@ -3580,9 +3607,10 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		render_pass.set_bind_group(0, &resources.sampler, &[]);
 		render_pass.set_bind_group(1, &textures.empty_texture, &[]);
 		render_pass.set_bind_group(2, &textures.empty_texture, &[]);
-		render_pass.set_bind_group(3, &resources.uniform_buffers[0].1, &[]);
-		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-		render_pass.draw(0..6, 0..1);
+		render_pass.set_bind_group(3, &sprites.uniform_buffer_views[0], &[]);
+		render_pass.set_vertex_buffer(0, sprites.vertex_buffer.slice(..));
+		render_pass.set_index_buffer(resources.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+		render_pass.draw_indexed(0..6, 0, 0..1);
 
 		for (i, video) in self.videos.iter().enumerate() {
 			match video.blend_mode {
@@ -3592,9 +3620,10 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				_ => render_pass.set_pipeline(&resources.pipeline_normal),
 			}
 
-			if video.is_empty {
+			let vertex_offset = if video.is_empty {
 				render_pass.set_bind_group(1, &textures.empty_texture, &[]);
 				render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
+				0
 			} else if video.has_matte {
 				let (base, matte) = &self.matte_sprites[video.matte_sprite_index];
 				render_pass.set_bind_group(
@@ -3607,21 +3636,18 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 					&textures.fragment_bind_group[matte.texture_index].1,
 					&[],
 				);
-				render_pass.set_vertex_buffer(
-					0,
-					sprites.matte_sprites[video.matte_sprite_index].slice(..),
-				);
+				sprites.matte_sprites[video.matte_sprite_index]
 			} else {
 				render_pass.set_bind_group(
 					1,
 					&textures.fragment_bind_group[self.sprites[&video.sprite_id].texture_index].1,
 					&[],
 				);
-				render_pass.set_vertex_buffer(0, sprites.sprites[&video.sprite_id].slice(..));
-			}
+				sprites.sprites[&video.sprite_id]
+			};
 
-			render_pass.set_bind_group(3, &resources.uniform_buffers[i + 1].1, &[]);
-			render_pass.draw(0..6, 0..1);
+			render_pass.set_bind_group(3, &sprites.uniform_buffer_views[i + 1], &[]);
+			render_pass.draw_indexed(0..6, vertex_offset, 0..1);
 		}
 	}
 }

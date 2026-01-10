@@ -1052,42 +1052,30 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 		};
 
 		queue.write_buffer(
-			&resources.uniform_buffers[0].0,
+			&resources.uniform_buffer,
 			0,
 			bytemuck::cast_slice(&[spr_info]),
 		);
 
-		let (tl, tr, bl, br) = ([-1.0, 1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, -1.0]);
-
 		let verticies = [
 			Vertex {
-				position: tr,
-				tex_coords: [self.sprite_coords[2], self.sprite_coords[3]],
-				matte_tex_coords: [0.0, 0.0],
-			},
-			Vertex {
-				position: bl,
-				tex_coords: [self.sprite_coords[0], self.sprite_coords[1]],
-				matte_tex_coords: [0.0, 0.0],
-			},
-			Vertex {
-				position: br,
-				tex_coords: [self.sprite_coords[2], self.sprite_coords[1]],
-				matte_tex_coords: [0.0, 0.0],
-			},
-			Vertex {
-				position: tl,
+				position: [-1.0, 1.0],
 				tex_coords: [self.sprite_coords[0], self.sprite_coords[3]],
 				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
-				position: bl,
+				position: [1.0, 1.0],
+				tex_coords: [self.sprite_coords[2], self.sprite_coords[3]],
+				matte_tex_coords: [0.0, 0.0],
+			},
+			Vertex {
+				position: [-1.0, -1.0],
 				tex_coords: [self.sprite_coords[0], self.sprite_coords[1]],
 				matte_tex_coords: [0.0, 0.0],
 			},
 			Vertex {
-				position: tr,
-				tex_coords: [self.sprite_coords[2], self.sprite_coords[3]],
+				position: [1.0, -1.0],
+				tex_coords: [self.sprite_coords[2], self.sprite_coords[1]],
 				matte_tex_coords: [0.0, 0.0],
 			},
 		];
@@ -1117,8 +1105,9 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 			&[],
 		);
 		render_pass.set_bind_group(2, &texture.empty_texture, &[]);
-		render_pass.set_bind_group(3, &resources.uniform_buffers[0].1, &[]);
+		render_pass.set_bind_group(3, &resources.uniform_buffer_group, &[]);
 		render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-		render_pass.draw(0..6, 0..1);
+		render_pass.set_index_buffer(resources.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+		render_pass.draw_indexed(0..6, 0, 0..1);
 	}
 }

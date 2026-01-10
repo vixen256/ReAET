@@ -20,7 +20,6 @@ fn main() {
 					label: Some("egui wgpu device"),
 					required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
 						| wgpu::Features::DEPTH_CLIP_CONTROL,
-					memory_hints: wgpu::MemoryHints::MemoryUsage,
 					..Default::default()
 				}),
 				..Default::default()
