@@ -10,7 +10,7 @@ egui_dnd = { git = "https://github.com/vixen256/hello_egui" }
 egui_extras = "0.33"
 egui_material_icons = "0.5"
 egui_plot = "0.34"
-glam = { version = "0.30", features = ["fast-math", "core-simd"] }
+glam = { version = "0.30", features = ["bytemuck", "fast-math", "core-simd"] }
 image = { version = "0.25", default-features = false, features = ["avif", "nasm", "bmp", "jpeg", "png", "rayon", "webp"] }
 kkdlib = { git = "https://github.com/vixen256/KKdLib-sys" }
 regex = "1"

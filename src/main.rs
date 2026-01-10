@@ -16,10 +16,16 @@ fn main() {
 		renderer: eframe::Renderer::Wgpu,
 		wgpu_options: WgpuConfiguration {
 			wgpu_setup: WgpuSetup::CreateNew(WgpuSetupCreateNew {
-				device_descriptor: std::sync::Arc::new(|_| wgpu::DeviceDescriptor {
+				device_descriptor: std::sync::Arc::new(|adapter| wgpu::DeviceDescriptor {
 					label: Some("egui wgpu device"),
 					required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
 						| wgpu::Features::DEPTH_CLIP_CONTROL,
+					required_limits: wgpu::Limits {
+						min_uniform_buffer_offset_alignment: adapter
+							.limits()
+							.min_uniform_buffer_offset_alignment,
+						..Default::default()
+					},
 					..Default::default()
 				}),
 				..Default::default()

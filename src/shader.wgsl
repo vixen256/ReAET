@@ -18,6 +18,8 @@ struct VideoInfo {
 
 @group(0) @binding(0)
 var Sampler: sampler;
+@group(0) @binding(1)
+var<uniform> Projection: mat4x4<f32>;
 
 @group(1) @binding(0)
 var Texture: texture_2d<f32>;
@@ -47,7 +49,7 @@ struct VertexOutput {
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
 	var out: VertexOutput;
-	out.position = video.matrix * vec4(in.position, 0.0, 1.0);
+	out.position = Projection * video.matrix * vec4(in.position, 0.0, 1.0);
 	out.tex_coords = in.tex_coords;
 	out.matte_tex_coords = in.matte_tex_coords;
 	return out;

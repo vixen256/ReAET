@@ -664,6 +664,12 @@ impl TreeNode for TextureNode {
 			0,
 			bytemuck::cast_slice(&[video_info]),
 		);
+
+		render_state.queue.write_buffer(
+			&resources.projection_buffer,
+			0,
+			bytemuck::bytes_of(&glam::Mat4::IDENTITY),
+		);
 	}
 
 	fn display_visual(
@@ -751,6 +757,7 @@ pub struct WgpuRenderResources {
 	pub texture_bind_group_layout: wgpu::BindGroupLayout,
 	pub video_bind_group_layout: wgpu::BindGroupLayout,
 	pub sampler: wgpu::BindGroup,
+	pub projection_buffer: wgpu::Buffer,
 	pub vertex_buffer: wgpu::Buffer,
 	pub index_buffer: wgpu::Buffer,
 	pub uniform_buffer: wgpu::Buffer,
@@ -786,12 +793,24 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 
 	let sampler_bind_group_layout =
 		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[wgpu::BindGroupLayoutEntry {
-				binding: 0,
-				visibility: wgpu::ShaderStages::FRAGMENT,
-				ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-				count: None,
-			}],
+			entries: &[
+				wgpu::BindGroupLayoutEntry {
+					binding: 0,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry {
+					binding: 1,
+					visibility: wgpu::ShaderStages::VERTEX,
+					ty: wgpu::BindingType::Buffer {
+						ty: wgpu::BufferBindingType::Uniform,
+						has_dynamic_offset: false,
+						min_binding_size: None,
+					},
+					count: None,
+				},
+			],
 			label: Some("Sampler bind group layout"),
 		});
 
@@ -1043,18 +1062,30 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		label: Some("Uniform bind group 0"),
 	});
 
+	let projection_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+		label: Some("Projection buffer"),
+		contents: bytemuck::bytes_of(&glam::Mat4::IDENTITY),
+		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+	});
+
 	let sampler = device.create_bind_group(&wgpu::BindGroupDescriptor {
 		layout: &sampler_bind_group_layout,
-		entries: &[wgpu::BindGroupEntry {
-			binding: 0,
-			resource: wgpu::BindingResource::Sampler(&device.create_sampler(
-				&wgpu::SamplerDescriptor {
-					mag_filter: wgpu::FilterMode::Linear,
-					min_filter: wgpu::FilterMode::Linear,
-					..Default::default()
-				},
-			)),
-		}],
+		entries: &[
+			wgpu::BindGroupEntry {
+				binding: 0,
+				resource: wgpu::BindingResource::Sampler(&device.create_sampler(
+					&wgpu::SamplerDescriptor {
+						mag_filter: wgpu::FilterMode::Linear,
+						min_filter: wgpu::FilterMode::Linear,
+						..Default::default()
+					},
+				)),
+			},
+			wgpu::BindGroupEntry {
+				binding: 1,
+				resource: projection_buffer.as_entire_binding(),
+			},
+		],
 		label: Some("Sampler bind group"),
 	});
 
@@ -1073,6 +1104,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			index_buffer,
 			uniform_buffer,
 			uniform_buffer_group,
+			projection_buffer,
 			sampler,
 		});
 }

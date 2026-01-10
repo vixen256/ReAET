@@ -1685,13 +1685,15 @@ impl eframe::App for App {
 							if ui.input_mut(|input| {
 								input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft)
 							}) {
-								scene.current_time -= 1.0;
+								scene.current_time = (scene.current_time - 1.0)
+									.clamp(scene.start_time, scene.end_time);
 							}
 
 							if ui.input_mut(|input| {
 								input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight)
 							}) {
-								scene.current_time += 1.0;
+								scene.current_time = (scene.current_time + 1.0)
+									.clamp(scene.start_time, scene.end_time);
 							}
 						}
 

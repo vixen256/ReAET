@@ -3069,6 +3069,19 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		let video_size = std::mem::size_of::<VideoInfo>()
 			.next_multiple_of(device.limits().min_uniform_buffer_offset_alignment as usize);
 
+		let projection = Mat4::from_cols(
+			Vec4::new(2.0 / self.viewport_size[0], 0.0, 0.0, 0.0),
+			Vec4::new(0.0, -2.0 / self.viewport_size[1], 0.0, 0.0),
+			Vec4::new(0.0, 0.0, 1.0, 0.0),
+			Vec4::new(-1.0, 1.0, 0.0, 1.0),
+		);
+
+		queue.write_buffer(
+			&resources.projection_buffer,
+			0,
+			bytemuck::bytes_of(&projection),
+		);
+
 		if callback_resources.get::<WgpuSpriteInfos>().is_none() {
 			let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
 				label: Some(&format!("Uniform buffer")),
@@ -3094,9 +3107,10 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 									offset: i as wgpu::BufferAddress
 										* video_size as wgpu::BufferAddress,
 									size: unsafe {
-										Some(wgpu::BufferSize::new_unchecked(
-											video_size as wgpu::BufferAddress,
-										))
+										Some(wgpu::BufferSize::new_unchecked(std::mem::size_of::<
+											VideoInfo,
+										>()
+											as wgpu::BufferAddress))
 									},
 								}),
 							}],
@@ -3194,7 +3208,18 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		);
 
 		let video_infos = [VideoInfo {
-			matrix: Mat4::IDENTITY.to_cols_array_2d(),
+			matrix: Mat4::from_cols(
+				Vec4::new(self.viewport_size[0] / 2.0, 0.0, 0.0, 0.0),
+				Vec4::new(0.0, self.viewport_size[1] / 2.0, 0.0, 0.0),
+				Vec4::new(0.0, 0.0, 1.0, 0.0),
+				Vec4::new(
+					self.viewport_size[0] / 2.0,
+					self.viewport_size[1] / 2.0,
+					0.0,
+					1.0,
+				),
+			)
+			.to_cols_array_2d(),
 			color: [
 				self.background_color[0],
 				self.background_color[1],
@@ -3213,14 +3238,6 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				+ m.y_axis * (video.source_size[1] / 2.0)
 				+ m.z_axis + m.w_axis;
 
-			let projection = Mat4::from_cols(
-				Vec4::new(2.0 / self.viewport_size[0], 0.0, 0.0, 0.0),
-				Vec4::new(0.0, -2.0 / self.viewport_size[1], 0.0, 0.0),
-				Vec4::new(0.0, 0.0, 1.0, 0.0),
-				Vec4::new(-1.0, 1.0, 0.0, 1.0),
-			);
-
-			let mut m = projection * m;
 			m.x_axis = m.x_axis * (video.source_size[0] / 2.0);
 			m.y_axis = m.y_axis * (-video.source_size[1] / 2.0);
 
@@ -3257,9 +3274,10 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 								offset: i as wgpu::BufferAddress
 									* video_size as wgpu::BufferAddress,
 								size: unsafe {
-									Some(wgpu::BufferSize::new_unchecked(
-										video_size as wgpu::BufferAddress,
-									))
+									Some(wgpu::BufferSize::new_unchecked(std::mem::size_of::<
+										VideoInfo,
+									>()
+										as wgpu::BufferAddress))
 								},
 							}),
 						}],

@@ -1086,6 +1086,12 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 			bytemuck::cast_slice(&verticies),
 		);
 
+		queue.write_buffer(
+			&resources.projection_buffer,
+			0,
+			bytemuck::bytes_of(&glam::Mat4::IDENTITY),
+		);
+
 		Vec::new()
 	}
 
