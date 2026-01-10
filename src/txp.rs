@@ -111,7 +111,7 @@ impl TreeNode for TextureSetNode {
 				flip: self
 					.children
 					.first()
-					.map_or(true, |tex| tex.try_lock().unwrap().flip),
+					.is_none_or(|tex| tex.try_lock().unwrap().flip),
 				index: self.children.len() as u32,
 				texture_updated: true,
 				db_entry: None,
@@ -342,9 +342,10 @@ impl TreeNode for TextureNode {
 
 						let mut buf = std::io::Cursor::new(Vec::new());
 
-						if let Err(_) = image::DynamicImage::ImageRgba8(image)
+						if image::DynamicImage::ImageRgba8(image)
 							.flipv()
 							.write_to(&mut buf, format)
+							.is_err()
 						{
 							return;
 						};

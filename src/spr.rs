@@ -197,7 +197,7 @@ impl SpriteSetNode {
 				.iter()
 				.find(|entry| {
 					let entry = entry.try_lock().unwrap();
-					entry.index == i as u16 && entry.texture == false
+					entry.index == i as u16 && !entry.texture
 				})
 				.cloned();
 		}
@@ -209,7 +209,7 @@ impl SpriteSetNode {
 				.iter()
 				.find(|entry| {
 					let entry = entry.try_lock().unwrap();
-					entry.index == i as u16 && entry.texture == true
+					entry.index == i as u16 && entry.texture
 				})
 				.cloned();
 		}
@@ -762,10 +762,11 @@ impl TreeNode for SpriteInfoNode {
 
 						let mut buf = std::io::Cursor::new(Vec::new());
 
-						if let Err(_) = image::DynamicImage::ImageRgba8(image)
+						if image::DynamicImage::ImageRgba8(image)
 							.flipv()
 							.crop(crop_x, crop_y, crop_w, crop_h)
 							.write_to(&mut buf, format)
+							.is_err()
 						{
 							return;
 						};

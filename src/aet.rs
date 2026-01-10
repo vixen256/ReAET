@@ -701,7 +701,7 @@ pub fn calc_mat(m: &mut Mat4, opacity: &mut f32, video: &aet::LayerVideo, frame:
 	scale[1] = video.scale_y.interpolate(frame);
 	anchor[0] = video.anchor_x.interpolate(frame);
 	anchor[1] = video.anchor_y.interpolate(frame);
-	*opacity = *opacity * video.opacity.interpolate(frame).clamp(0.0, 1.0);
+	*opacity *= video.opacity.interpolate(frame).clamp(0.0, 1.0);
 
 	if let Some(_3d) = &video._3d {
 		pos[2] = -_3d.pos_z.interpolate(frame);
@@ -759,9 +759,9 @@ pub fn calc_mat(m: &mut Mat4, opacity: &mut f32, video: &aet::LayerVideo, frame:
 		m.y_axis = x * -rad.sin() + y * rad.cos();
 	}
 
-	m.x_axis = m.x_axis * scale[0];
-	m.y_axis = m.y_axis * scale[1];
-	m.z_axis = m.z_axis * scale[2];
+	m.x_axis *= scale[0];
+	m.y_axis *= scale[1];
+	m.z_axis *= scale[2];
 	m.w_axis = m.x_axis * -anchor[0] + m.y_axis * -anchor[1] + m.z_axis * -anchor[2] + m.w_axis;
 }
 
@@ -919,7 +919,7 @@ impl AetCompNode {
 						};
 
 						let sprs = spr_set.sprites_node.children.try_lock().unwrap();
-						let Some(sprite) = sprs.iter().skip(index as usize).next() else {
+						let Some(sprite) = sprs.iter().nth(index as usize) else {
 							continue;
 						};
 
@@ -1283,8 +1283,8 @@ impl AetCompNode {
 					);
 
 					let mut m = projection * m;
-					m.x_axis = m.x_axis * (size[0] / 2.0);
-					m.y_axis = m.y_axis * (size[1] / 2.0);
+					m.x_axis *= size[0] / 2.0;
+					m.y_axis *= size[1] / 2.0;
 
 					let tl = Vec4::new(-1.0, -1.0, 0.0, 1.0);
 					let tr = Vec4::new(1.0, -1.0, 0.0, 1.0);
@@ -1681,14 +1681,11 @@ impl TreeNode for AetLayerNode {
 	}
 
 	fn display_children(&mut self, f: &mut dyn FnMut(&mut dyn TreeNode)) {
-		match &mut self.item {
-			AetItemNode::Comp(comp) => {
-				for layer in &mut comp.layers {
-					let mut lock = layer.try_lock().unwrap();
-					f(&mut *lock);
-				}
+		if let AetItemNode::Comp(comp) = &mut self.item {
+			for layer in &mut comp.layers {
+				let mut lock = layer.try_lock().unwrap();
+				f(&mut *lock);
 			}
-			_ => {}
 		}
 	}
 
@@ -1824,10 +1821,7 @@ impl TreeNode for AetLayerNode {
 
 				let mut has_audio = self.audio.is_some();
 				let mut has_video = self.video.is_some();
-				let mut has_3d = self
-					.video
-					.as_ref()
-					.map_or(false, |video| video._3d.is_some());
+				let mut has_3d = self.video.as_ref().is_some_and(|video| video._3d.is_some());
 
 				body.row(height, |mut row| {
 					row.col(|ui| {
@@ -2328,43 +2322,35 @@ impl AetLayerNode {
 				CurveType::AnchorZ => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.anchor_z))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.anchor_z)),
 				CurveType::PosZ => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.pos_z))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.pos_z)),
 				CurveType::DirX => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_x))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_x)),
 				CurveType::DirY => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_y))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_y)),
 				CurveType::DirZ => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_z))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_z)),
 				CurveType::RotX => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_x))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_x)),
 				CurveType::RotY => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_y))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_y)),
 				CurveType::ScaleZ => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.scale_z))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.scale_z)),
 			},
 		};
 
@@ -2727,43 +2713,35 @@ impl AetLayerNode {
 				CurveType::AnchorZ => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.anchor_z))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.anchor_z)),
 				CurveType::PosZ => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.pos_z))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.pos_z)),
 				CurveType::DirX => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_x))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_x)),
 				CurveType::DirY => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_y))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_y)),
 				CurveType::DirZ => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_z))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.dir_z)),
 				CurveType::RotX => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_x))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_x)),
 				CurveType::RotY => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_y))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.rot_y)),
 				CurveType::ScaleZ => self
 					.video
 					.as_mut()
-					.map(|video| video._3d.as_mut().map(|_3d| &mut _3d.scale_z))
-					.flatten(),
+					.and_then(|video| video._3d.as_mut().map(|_3d| &mut _3d.scale_z)),
 			},
 		};
 
@@ -2898,7 +2876,7 @@ impl AetLayerNode {
 			line.initialize((self.start_time as f64)..=(self.end_time as f64));
 
 			let mut shapes = Vec::new();
-			line.shapes(&ui, &plot, &mut shapes);
+			line.shapes(ui, &plot, &mut shapes);
 			ui.painter().add(shapes);
 		}
 
@@ -3084,14 +3062,14 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 
 		if callback_resources.get::<WgpuSpriteInfos>().is_none() {
 			let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-				label: Some(&format!("Uniform buffer")),
+				label: Some("Uniform buffer"),
 				size: video_size as wgpu::BufferAddress * 256,
 				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
 				mapped_at_creation: false,
 			});
 			callback_resources.insert(WgpuSpriteInfos {
 				vertex_buffer: device.create_buffer(&wgpu::BufferDescriptor {
-					label: Some(&format!("Vertex buffer")),
+					label: Some("Vertex buffer"),
 					size: std::mem::size_of::<Vertex>() as wgpu::BufferAddress * 4 * 256,
 					usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
 					mapped_at_creation: false,
@@ -3192,7 +3170,7 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			* 4 > wgpu_sprite_infos.vertex_buffer.size()
 		{
 			wgpu_sprite_infos.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-				label: Some(&format!("Vertex buffer")),
+				label: Some("Vertex buffer"),
 				size: verticies.len().next_power_of_two() as wgpu::BufferAddress
 					* std::mem::size_of::<Vertex>() as wgpu::BufferAddress
 					* 4,
@@ -3238,8 +3216,8 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				+ m.y_axis * (video.source_size[1] / 2.0)
 				+ m.z_axis + m.w_axis;
 
-			m.x_axis = m.x_axis * (video.source_size[0] / 2.0);
-			m.y_axis = m.y_axis * (-video.source_size[1] / 2.0);
+			m.x_axis *= video.source_size[0] / 2.0;
+			m.y_axis *= -video.source_size[1] / 2.0;
 
 			VideoInfo {
 				matrix: m.to_cols_array_2d(),
@@ -3256,7 +3234,7 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 			> wgpu_sprite_infos.uniform_buffer.size()
 		{
 			wgpu_sprite_infos.uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-				label: Some(&format!("Uniform buffer")),
+				label: Some("Uniform buffer"),
 				size: video_infos.len().next_power_of_two() as wgpu::BufferAddress
 					* video_size as wgpu::BufferAddress,
 				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
@@ -3287,8 +3265,7 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				.collect();
 		}
 
-		let mut bytes = Vec::with_capacity(video_size * video_infos.len());
-		bytes.resize(video_size * video_infos.len(), 0);
+		let mut bytes = vec![0; video_size * video_infos.len()];
 		for (i, video) in video_infos.iter().enumerate() {
 			bytes[(i * video_size)..(i * video_size + std::mem::size_of::<VideoInfo>())]
 				.copy_from_slice(bytemuck::bytes_of(video));

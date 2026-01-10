@@ -135,7 +135,7 @@ impl LayerUndoer {
 				});
 		let layer = layer.try_lock().unwrap();
 
-		if selected == &self.current_path {
+		if selected == self.current_path {
 			if let Some((time, last_update)) = &mut self.flux {
 				if *last_update != *layer {
 					*time = current_time;
@@ -171,7 +171,7 @@ impl LayerUndoer {
 			comp.clone()
 		});
 
-		if selected == &self.current_path {
+		if selected == self.current_path {
 			if let Some((time, last_update)) = &mut self.flux {
 				let aet::AetItemNode::Comp(last_update) = &mut last_update.item else {
 					panic!();
@@ -398,7 +398,7 @@ pub fn num_edit<Num: egui::emath::Numeric + std::str::FromStr + std::fmt::Displa
 		if is_editing {
 			let mut value_text = ui
 				.data_mut(|data| data.remove_temp::<String>(id))
-				.unwrap_or_else(|| value_text);
+				.unwrap_or(value_text);
 			let response = ui.add(
 				egui::TextEdit::singleline(&mut value_text)
 					.clip_text(false)
@@ -424,10 +424,10 @@ pub fn num_edit<Num: egui::emath::Numeric + std::str::FromStr + std::fmt::Displa
 				state.store(ui.ctx(), response.id);
 			}
 
-			if response.changed() {
-				if let Ok(parsed_value) = value_text.parse() {
-					*value = parsed_value;
-				}
+			if response.changed()
+				&& let Ok(parsed_value) = value_text.parse()
+			{
+				*value = parsed_value;
 			}
 			ui.data_mut(|data| data.insert_temp(id, value_text));
 
@@ -616,7 +616,7 @@ impl App {
 			.unwrap_or_default();
 
 		if AETSET.is_match(name) {
-			let aet_set = aet::AetSetNode::read(&name, data);
+			let aet_set = aet::AetSetNode::read(name, data);
 			if aet_set.modern {
 				self.modern_writing_modal = true;
 			}
@@ -626,7 +626,7 @@ impl App {
 			self.sprite_set = None;
 			self.undoer = LayerUndoer::new();
 		} else if SPRSET.is_match(name) {
-			let spr_set = spr::SpriteSetNode::read(&name, data);
+			let spr_set = spr::SpriteSetNode::read(name, data);
 			if spr_set.modern {
 				self.modern_writing_modal = true;
 			}
@@ -693,7 +693,7 @@ impl App {
 				self.aet_set_farc = Some(farc);
 			}
 		} else if SPRDB.is_match(name) {
-			self.spr_db = Some(spr_db::SprDbNode::read(&name, &data));
+			self.spr_db = Some(spr_db::SprDbNode::read(name, data));
 			self.spr_db_filepath = Some(path.clone());
 		}
 
@@ -802,7 +802,7 @@ impl App {
 					if file_name == set_name
 						&& let Ok(data) = std::fs::read(file.path())
 					{
-						let mut spr_set = spr::SpriteSetNode::read(&name, &data);
+						let mut spr_set = spr::SpriteSetNode::read(name, &data);
 						spr_set.init_wgpu(frame);
 						spr_set.add_db(db_set.clone());
 
@@ -873,7 +873,7 @@ impl App {
 			&& let Some(path) = &self.sprite_set_filepath
 		{
 			if let Some(farc) = &self.sprite_set_farc {
-				let adding_spr_db = self.spr_db.as_ref().map_or(false, |spr_db| spr_db.modern);
+				let adding_spr_db = self.spr_db.as_ref().is_some_and(|spr_db| spr_db.modern);
 
 				let mut new_farc = kkdlib::farc::Farc::new();
 				new_farc.set_flags(farc.flags());
@@ -943,7 +943,7 @@ impl App {
 			if let Some(farc) = &self.sprite_set_farc
 				&& let Some(path) = &self.sprite_set_filepath
 			{
-				let adding_spr_db = self.spr_db.as_ref().map_or(false, |spr_db| spr_db.modern);
+				let adding_spr_db = self.spr_db.as_ref().is_some_and(|spr_db| spr_db.modern);
 
 				let mut new_farc = kkdlib::farc::Farc::new();
 				new_farc.set_flags(farc.flags());
