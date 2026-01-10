@@ -2343,7 +2343,21 @@ impl TreeNode for AetLayerNode {
 								ui.label("Width");
 							});
 							row.col(|ui| {
-								crate::app::num_edit(ui, &mut video.width, 0);
+								let mut width = video.width;
+								if crate::app::num_edit(ui, &mut width, 0).changed() {
+									if let Some(lvideo) = &mut self.video
+										&& lvideo.anchor_x.keys.len() == 1
+										&& lvideo.anchor_x.keys[0].value == video.width as f32 / 2.0
+									{
+										lvideo.anchor_x.keys[0].value = width as f32 / 2.0;
+
+										for key in &mut lvideo.pos_x.keys {
+											key.value -= video.width as f32 / 2.0;
+											key.value += width as f32 / 2.0;
+										}
+									}
+									video.width = width;
+								}
 							});
 						});
 
@@ -2352,7 +2366,22 @@ impl TreeNode for AetLayerNode {
 								ui.label("Height");
 							});
 							row.col(|ui| {
-								crate::app::num_edit(ui, &mut video.height, 0);
+								let mut height = video.height;
+								if crate::app::num_edit(ui, &mut height, 0).changed() {
+									if let Some(lvideo) = &mut self.video
+										&& lvideo.anchor_y.keys.len() == 1
+										&& lvideo.anchor_y.keys[0].value
+											== video.height as f32 / 2.0
+									{
+										lvideo.anchor_y.keys[0].value = height as f32 / 2.0;
+
+										for key in &mut lvideo.pos_y.keys {
+											key.value -= video.height as f32 / 2.0;
+											key.value += height as f32 / 2.0;
+										}
+									}
+									video.height = height;
+								}
 							});
 						});
 
