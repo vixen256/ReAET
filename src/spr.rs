@@ -1043,7 +1043,7 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 
 		let spr_info = VideoInfo {
-			matrix: crate::aet::Mat4::default().into(),
+			matrix: glam::Mat4::IDENTITY.to_cols_array_2d(),
 			color: [1.0, 1.0, 1.0, 1.0],
 			has_matte: 0,
 			_padding_0: 0,

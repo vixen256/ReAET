@@ -1,12 +1,12 @@
 use crate::app::TreeNode;
 use crate::txp::*;
-use cgmath::SquareMatrix;
 use eframe::egui;
 use eframe::egui::Widget;
 use eframe::egui_wgpu;
 use eframe::egui_wgpu::wgpu;
 use egui_material_icons::icons::*;
 use egui_plot::PlotItem;
+use glam::{Mat4, Vec4};
 use kkdlib::*;
 use regex::Regex;
 use std::collections::*;
@@ -14,121 +14,6 @@ use std::ops::*;
 use std::rc::Rc;
 use std::sync::*;
 use transform_gizmo_egui::prelude::*;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
-pub struct Vec4 {
-	pub x: f32,
-	pub y: f32,
-	pub z: f32,
-	pub w: f32,
-}
-
-impl Add<Vec4> for Vec4 {
-	type Output = Vec4;
-
-	fn add(self, rhs: Vec4) -> Self::Output {
-		Vec4 {
-			x: self.x + rhs.x,
-			y: self.y + rhs.y,
-			z: self.z + rhs.z,
-			w: self.w + rhs.w,
-		}
-	}
-}
-
-impl Mul<f32> for Vec4 {
-	type Output = Vec4;
-
-	fn mul(self, rhs: f32) -> Self::Output {
-		Vec4 {
-			x: self.x * rhs,
-			y: self.y * rhs,
-			z: self.z * rhs,
-			w: self.w * rhs,
-		}
-	}
-}
-
-impl Mul<Vec4> for Vec4 {
-	type Output = Vec4;
-
-	fn mul(self, rhs: Vec4) -> Self::Output {
-		Vec4 {
-			x: self.x * rhs.x,
-			y: self.y * rhs.y,
-			z: self.z * rhs.z,
-			w: self.w * rhs.w,
-		}
-	}
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Mat4 {
-	pub x: Vec4,
-	pub y: Vec4,
-	pub z: Vec4,
-	pub w: Vec4,
-}
-
-impl Default for Mat4 {
-	fn default() -> Self {
-		Self {
-			x: Vec4 {
-				x: 1.0,
-				..Default::default()
-			},
-			y: Vec4 {
-				y: 1.0,
-				..Default::default()
-			},
-			z: Vec4 {
-				z: 1.0,
-				..Default::default()
-			},
-			w: Vec4 {
-				w: 1.0,
-				..Default::default()
-			},
-		}
-	}
-}
-
-impl Into<[[f32; 4]; 4]> for Mat4 {
-	fn into(self) -> [[f32; 4]; 4] {
-		[
-			[self.x.x, self.x.y, self.x.z, self.x.w],
-			[self.y.x, self.y.y, self.y.z, self.y.w],
-			[self.z.x, self.z.y, self.z.z, self.z.w],
-			[self.w.x, self.w.y, self.w.z, self.w.w],
-		]
-	}
-}
-
-impl Mul<Vec4> for Mat4 {
-	type Output = Vec4;
-
-	fn mul(self, rhs: Vec4) -> Vec4 {
-		Vec4 {
-			x: self.x.x * rhs.x + self.y.x * rhs.y + self.z.x * rhs.z + self.w.x * rhs.w,
-			y: self.x.y * rhs.x + self.y.y * rhs.y + self.z.y * rhs.z + self.w.y * rhs.w,
-			z: self.x.z * rhs.x + self.y.z * rhs.y + self.z.z * rhs.z + self.w.z * rhs.w,
-			w: self.x.w * rhs.x + self.y.w * rhs.y + self.z.w * rhs.z + self.w.w * rhs.w,
-		}
-	}
-}
-
-impl Mul<Mat4> for Mat4 {
-	type Output = Mat4;
-
-	fn mul(self, rhs: Mat4) -> Mat4 {
-		Mat4 {
-			x: self * rhs.x,
-			y: self * rhs.y,
-			z: self * rhs.z,
-			w: self * rhs.w,
-		}
-	}
-}
 
 #[derive(Clone, PartialEq)]
 pub struct AetSetNode {
@@ -533,10 +418,10 @@ impl AetSceneNode {
 		rect: egui::Rect,
 		selected: &mut Vec<usize>,
 	) {
-		let mut mat = Mat4::default();
+		let mut mat = Mat4::IDENTITY;
 		if self.centered {
-			mat.w.x = self.width as f32 / 2.0;
-			mat.w.y = self.height as f32 / 2.0;
+			mat.w_axis.x = self.width as f32 / 2.0;
+			mat.w_axis.y = self.height as f32 / 2.0;
 		}
 
 		if let Some(camera) = &self.camera {
@@ -546,7 +431,8 @@ impl AetSceneNode {
 			eye[1] = camera.eye_y.interpolate(self.current_time) - self.height as f32 * 0.5;
 			eye[2] = camera.eye_z.interpolate(self.current_time);
 
-			mat.w = mat.x * -eye[0] + mat.y * -eye[1] + mat.z * -eye[2] + mat.w;
+			mat.w_axis =
+				mat.x_axis * -eye[0] + mat.y_axis * -eye[1] + mat.z_axis * -eye[2] + mat.w_axis;
 		}
 
 		let mut videos = WgpuAetVideos {
@@ -579,11 +465,11 @@ impl AetSceneNode {
 
 		if selected.len() >= 3 {
 			let mut frame = self.current_time;
-			let mut m = Mat4::default();
+			let mut m = Mat4::IDENTITY;
 			let mut opacity = 0.0;
 			if self.centered {
-				m.w.x = self.width as f32 / 2.0;
-				m.w.y = self.height as f32 / 2.0;
+				m.w_axis.x = self.width as f32 / 2.0;
+				m.w_axis.y = self.height as f32 / 2.0;
 			}
 
 			if let Some(video) = &self.root.layers[selected[2]].try_lock().unwrap().video {
@@ -619,11 +505,11 @@ impl AetSceneNode {
 			if !selected.try_lock().unwrap().multi_selected
 				&& let Some(video) = &mut selected.try_lock().unwrap().video
 			{
-				m.w = m.x * video.anchor_x.interpolate(frame)
-					+ m.y * video.anchor_y.interpolate(frame)
-					+ m.w;
-				m.w.y = -m.w.y + self.height as f32;
-				m.w.z = 0.0;
+				m.w_axis = m.x_axis * video.anchor_x.interpolate(frame)
+					+ m.y_axis * video.anchor_y.interpolate(frame)
+					+ m.w_axis;
+				m.w_axis.y = -m.w_axis.y + self.height as f32;
+				m.w_axis.z = 0.0;
 
 				self.gizmo.update_config(GizmoConfig {
 					projection_matrix: transform_gizmo_egui::math::DMat4::from_cols_array_2d(&[
@@ -643,11 +529,21 @@ impl AetSceneNode {
 					..Default::default()
 				});
 
+				let (scale, rotation, translation) = m.to_scale_rotation_translation();
 				let transform =
 					transform_gizmo_egui::math::Transform::from_scale_rotation_translation(
-						transform_gizmo_egui::math::DVec3::default(),
-						transform_gizmo_egui::math::DQuat::default(),
-						[m.w.x as f64, m.w.y as f64, m.w.z as f64],
+						glam::dvec3(scale.x as f64, scale.y as f64, scale.z as f64),
+						glam::dquat(
+							rotation.x as f64,
+							rotation.y as f64,
+							rotation.z as f64,
+							rotation.w as f64,
+						),
+						glam::dvec3(
+							translation.x as f64,
+							translation.y as f64,
+							translation.z as f64,
+						),
 					);
 
 				if let Some((result, _)) = self.gizmo.interact(ui, &[transform]) {
@@ -688,7 +584,7 @@ impl AetSceneNode {
 										}) {
 									key.value += delta.x as f32;
 								} else {
-									video.pos_x.keys[0].value += delta.x as f32 / m.x.x;
+									video.pos_x.keys[0].value += delta.x as f32 / m.x_axis.x;
 								}
 
 								if let Some(key) =
@@ -709,15 +605,15 @@ impl AetSceneNode {
 										}) {
 									key.value += -delta.y as f32;
 								} else {
-									video.pos_y.keys[0].value += -delta.y as f32 / m.y.y;
+									video.pos_y.keys[0].value += -delta.y as f32 / m.y_axis.y;
 								}
 							} else {
 								for key in &mut video.pos_x.keys {
-									key.value += delta.x as f32 / m.x.x;
+									key.value += delta.x as f32 / m.x_axis.x;
 								}
 
 								for key in &mut video.pos_y.keys {
-									key.value += -delta.y as f32 / m.y.y;
+									key.value += -delta.y as f32 / m.y_axis.y;
 								}
 							}
 						}
@@ -818,55 +714,55 @@ pub fn calc_mat(m: &mut Mat4, opacity: &mut f32, video: &aet::LayerVideo, frame:
 		anchor[2] = _3d.anchor_z.interpolate(frame);
 	}
 
-	m.w = m.x * pos[0] + m.y * pos[1] + m.z * -pos[2] + m.w;
+	m.w_axis = m.x_axis * pos[0] + m.y_axis * pos[1] + m.z_axis * -pos[2] + m.w_axis;
 	if dir[0] != 0.0 {
 		let rad = -dir[0].to_radians();
-		let y = m.y;
-		let z = m.z;
-		m.y = y * rad.cos() + z * rad.sin();
-		m.z = y * -rad.sin() + z * rad.cos();
+		let y = m.y_axis;
+		let z = m.z_axis;
+		m.y_axis = y * rad.cos() + z * rad.sin();
+		m.z_axis = y * -rad.sin() + z * rad.cos();
 	}
 	if dir[1] != 0.0 {
 		let rad = -dir[1].to_radians();
-		let x = m.x;
-		let z = m.z;
-		m.x = x * rad.cos() + z * -rad.sin();
-		m.z = x * rad.sin() + z * rad.cos();
+		let x = m.x_axis;
+		let z = m.z_axis;
+		m.x_axis = x * rad.cos() + z * -rad.sin();
+		m.z_axis = x * rad.sin() + z * rad.cos();
 	}
 	if dir[2] != 0.0 {
 		let rad = dir[2].to_radians();
-		let x = m.x;
-		let y = m.y;
-		m.x = x * rad.cos() + y * rad.sin();
-		m.y = x * -rad.sin() + y * rad.cos();
+		let x = m.x_axis;
+		let y = m.y_axis;
+		m.x_axis = x * rad.cos() + y * rad.sin();
+		m.y_axis = x * -rad.sin() + y * rad.cos();
 	}
 
 	if rot[0] != 0.0 {
 		let rad = -rot[0].to_radians();
-		let y = m.y;
-		let z = m.z;
-		m.y = y * rad.cos() + z * rad.sin();
-		m.z = y * -rad.sin() + z * rad.cos();
+		let y = m.y_axis;
+		let z = m.z_axis;
+		m.y_axis = y * rad.cos() + z * rad.sin();
+		m.z_axis = y * -rad.sin() + z * rad.cos();
 	}
 	if rot[1] != 0.0 {
 		let rad = -rot[1].to_radians();
-		let x = m.x;
-		let z = m.z;
-		m.x = x * rad.cos() + z * -rad.sin();
-		m.z = x * rad.sin() + z * rad.cos();
+		let x = m.x_axis;
+		let z = m.z_axis;
+		m.x_axis = x * rad.cos() + z * -rad.sin();
+		m.z_axis = x * rad.sin() + z * rad.cos();
 	}
 	if rot[2] != 0.0 {
 		let rad = rot[2].to_radians();
-		let x = m.x;
-		let y = m.y;
-		m.x = x * rad.cos() + y * rad.sin();
-		m.y = x * -rad.sin() + y * rad.cos();
+		let x = m.x_axis;
+		let y = m.y_axis;
+		m.x_axis = x * rad.cos() + y * rad.sin();
+		m.y_axis = x * -rad.sin() + y * rad.cos();
 	}
 
-	m.x = m.x * scale[0];
-	m.y = m.y * scale[1];
-	m.z = m.z * scale[2];
-	m.w = m.x * -anchor[0] + m.y * -anchor[1] + m.z * -anchor[2] + m.w;
+	m.x_axis = m.x_axis * scale[0];
+	m.y_axis = m.y_axis * scale[1];
+	m.z_axis = m.z_axis * scale[2];
+	m.w_axis = m.x_axis * -anchor[0] + m.y_axis * -anchor[1] + m.z_axis * -anchor[2] + m.w_axis;
 }
 
 #[derive(Clone)]
@@ -1158,83 +1054,27 @@ impl AetCompNode {
 							texture_coords: [tl, tr, bl, br],
 						};
 
-						let vtx0 = Vec4 {
-							x: 0.0,
-							y: 0.0,
-							z: 0.0,
-							w: 0.0,
-						};
-						let vtx1 = Vec4 {
-							x: 0.0,
-							y: sprite.info.height(),
-							z: 0.0,
-							w: 0.0,
-						};
-						let vtx2 = Vec4 {
-							x: sprite.info.width(),
-							y: sprite.info.height(),
-							z: 0.0,
-							w: 0.0,
-						};
-						let vtx3 = Vec4 {
-							x: sprite.info.width(),
-							y: 0.0,
-							z: 0.0,
-							w: 0.0,
-						};
+						let vtx0 = glam::vec3(0.0, 0.0, 0.0);
+						let vtx1 = glam::vec3(0.0, sprite.info.height(), 0.0);
+						let vtx2 = glam::vec3(sprite.info.width(), sprite.info.height(), 0.0);
+						let vtx3 = glam::vec3(sprite.info.width(), 0.0, 0.0);
 
-						let vtx0 = m.x * vtx0.x + m.y * vtx0.y + m.z * vtx0.z + m.w;
-						let vtx1 = m.x * vtx1.x + m.y * vtx1.y + m.z * vtx1.z + m.w;
-						let vtx2 = m.x * vtx2.x + m.y * vtx2.y + m.z * vtx2.z + m.w;
-						let vtx3 = m.x * vtx3.x + m.y * vtx3.y + m.z * vtx3.z + m.w;
+						let vtx0 = m.transform_point3(vtx0);
+						let vtx1 = m.transform_point3(vtx1);
+						let vtx2 = m.transform_point3(vtx2);
+						let vtx3 = m.transform_point3(vtx3);
 
-						// lazy
-						let m_mat = cgmath::Matrix4::new(
-							m_mat.x.x, m_mat.x.y, m_mat.x.z, m_mat.x.w, m_mat.y.x, m_mat.y.y,
-							m_mat.y.z, m_mat.y.w, m_mat.z.x, m_mat.z.y, m_mat.z.z, m_mat.z.w,
-							m_mat.w.x, m_mat.w.y, m_mat.w.z, m_mat.w.w,
-						);
-						let m_mat = m_mat.invert().unwrap();
-						let m_mat = Mat4 {
-							x: Vec4 {
-								x: m_mat.x.x,
-								y: m_mat.x.y,
-								z: m_mat.x.z,
-								w: m_mat.x.w,
-							},
-							y: Vec4 {
-								x: m_mat.y.x,
-								y: m_mat.y.y,
-								z: m_mat.y.z,
-								w: m_mat.y.w,
-							},
-							z: Vec4 {
-								x: m_mat.z.x,
-								y: m_mat.z.y,
-								z: m_mat.z.z,
-								w: m_mat.z.w,
-							},
-							w: Vec4 {
-								x: m_mat.w.x,
-								y: m_mat.w.y,
-								z: m_mat.w.z,
-								w: m_mat.w.w,
-							},
-						};
+						let m_mat = m_mat.inverse();
 
-						let m_vtx0 =
-							m_mat.x * vtx0.x + m_mat.y * vtx0.y + m_mat.z * vtx0.z + m_mat.w;
-						let m_vtx1 =
-							m_mat.x * vtx1.x + m_mat.y * vtx1.y + m_mat.z * vtx1.z + m_mat.w;
-						let m_vtx2 =
-							m_mat.x * vtx2.x + m_mat.y * vtx2.y + m_mat.z * vtx2.z + m_mat.w;
-						let m_vtx3 =
-							m_mat.x * vtx3.x + m_mat.y * vtx3.y + m_mat.z * vtx3.z + m_mat.w;
+						let vtx0 = m_mat.transform_point3(vtx0);
+						let vtx1 = m_mat.transform_point3(vtx1);
+						let vtx2 = m_mat.transform_point3(vtx2);
+						let vtx3 = m_mat.transform_point3(vtx3);
 
-						let tl = [(m_vtx0.x + m_x) / m_w, (m_h - (m_vtx0.y + m_y)) / m_h];
-						let bl = [(m_vtx1.x + m_x) / m_w, (m_h - (m_vtx1.y + m_y)) / m_h];
-						let br = [(m_vtx2.x + m_x) / m_w, (m_h - (m_vtx2.y + m_y)) / m_h];
-						let tr = [(m_vtx3.x + m_x) / m_w, (m_h - (m_vtx3.y + m_y)) / m_h];
+						let tl = [(vtx0.x + m_x) / m_w, (m_h - (vtx0.y + m_y)) / m_h];
+						let bl = [(vtx1.x + m_x) / m_w, (m_h - (vtx1.y + m_y)) / m_h];
+						let br = [(vtx2.x + m_x) / m_w, (m_h - (vtx2.y + m_y)) / m_h];
+						let tr = [(vtx3.x + m_x) / m_w, (m_h - (vtx3.y + m_y)) / m_h];
 
 						videos.matte_sprites.push((
 							spr_info,
@@ -1308,32 +1148,12 @@ impl AetCompNode {
 					return;
 				};
 
-				let top = Mat4 {
-					x: Vec4 {
-						x: width,
-						y: 0.0,
-						z: 0.0,
-						w: 0.0,
-					},
-					y: Vec4 {
-						x: 0.0,
-						y: 5.0,
-						z: 0.0,
-						w: 0.0,
-					},
-					z: Vec4 {
-						x: 0.0,
-						y: 0.0,
-						z: 1.0,
-						w: 0.0,
-					},
-					w: Vec4 {
-						x: 0.0,
-						y: 0.0,
-						z: 0.0,
-						w: 1.0,
-					},
-				};
+				let top = Mat4::from_cols(
+					Vec4::new(width, 0.0, 0.0, 0.0),
+					Vec4::new(0.0, 5.0, 0.0, 0.0),
+					Vec4::new(0.0, 0.0, 1.0, 0.0),
+					Vec4::new(0.0, 0.0, 0.0, 1.0),
+				);
 				videos.videos.push(WgpuAetVideo {
 					has_matte: false,
 					is_empty: true,
@@ -1345,32 +1165,12 @@ impl AetCompNode {
 					blend_mode: aet::BlendMode::Add,
 				});
 
-				let bottom = Mat4 {
-					x: Vec4 {
-						x: width,
-						y: 0.0,
-						z: 0.0,
-						w: 0.0,
-					},
-					y: Vec4 {
-						x: 0.0,
-						y: 5.0,
-						z: 0.0,
-						w: 0.0,
-					},
-					z: Vec4 {
-						x: 0.0,
-						y: 0.0,
-						z: 1.0,
-						w: 0.0,
-					},
-					w: Vec4 {
-						x: 0.0,
-						y: height - 5.0,
-						z: 0.0,
-						w: 1.0,
-					},
-				};
+				let bottom = Mat4::from_cols(
+					Vec4::new(width, 0.0, 0.0, 0.0),
+					Vec4::new(0.0, 5.0, 0.0, 0.0),
+					Vec4::new(0.0, 0.0, 1.0, 0.0),
+					Vec4::new(0.0, height - 5.0, 0.0, 1.0),
+				);
 				videos.videos.push(WgpuAetVideo {
 					has_matte: false,
 					is_empty: true,
@@ -1382,32 +1182,12 @@ impl AetCompNode {
 					blend_mode: aet::BlendMode::Add,
 				});
 
-				let left = Mat4 {
-					x: Vec4 {
-						x: 5.0,
-						y: 0.0,
-						z: 0.0,
-						w: 0.0,
-					},
-					y: Vec4 {
-						x: 0.0,
-						y: height,
-						z: 0.0,
-						w: 0.0,
-					},
-					z: Vec4 {
-						x: 0.0,
-						y: 0.0,
-						z: 1.0,
-						w: 0.0,
-					},
-					w: Vec4 {
-						x: 0.0,
-						y: 0.0,
-						z: 0.0,
-						w: 1.0,
-					},
-				};
+				let left = Mat4::from_cols(
+					Vec4::new(5.0, 0.0, 0.0, 0.0),
+					Vec4::new(0.0, height, 0.0, 0.0),
+					Vec4::new(0.0, 0.0, 1.0, 0.0),
+					Vec4::new(0.0, 0.0, 0.0, 1.0),
+				);
 				videos.videos.push(WgpuAetVideo {
 					has_matte: false,
 					is_empty: true,
@@ -1419,32 +1199,12 @@ impl AetCompNode {
 					blend_mode: aet::BlendMode::Add,
 				});
 
-				let right = Mat4 {
-					x: Vec4 {
-						x: 5.0,
-						y: 0.0,
-						z: 0.0,
-						w: 0.0,
-					},
-					y: Vec4 {
-						x: 0.0,
-						y: height,
-						z: 0.0,
-						w: 0.0,
-					},
-					z: Vec4 {
-						x: 0.0,
-						y: 0.0,
-						z: 1.0,
-						w: 0.0,
-					},
-					w: Vec4 {
-						x: width - 5.0,
-						y: 0.0,
-						z: 0.0,
-						w: 1.0,
-					},
-				};
+				let right = Mat4::from_cols(
+					Vec4::new(5.0, 0.0, 0.0, 0.0),
+					Vec4::new(0.0, height, 0.0, 0.0),
+					Vec4::new(0.0, 0.0, 1.0, 0.0),
+					Vec4::new(width - 5.0, 0.0, 0.0, 1.0),
+				);
 				videos.videos.push(WgpuAetVideo {
 					has_matte: false,
 					is_empty: true,
@@ -1511,84 +1271,32 @@ impl AetCompNode {
 					} else {
 						continue;
 					};
-					m.w = m.x * (size[0] / 2.0) + m.y * (size[1] / 2.0) + m.z + m.w;
+					m.w_axis = m.x_axis * (size[0] / 2.0)
+						+ m.y_axis * (size[1] / 2.0)
+						+ m.z_axis + m.w_axis;
 
-					let projection = Mat4 {
-						x: Vec4 {
-							x: 2.0 / viewport_size[0],
-							y: 0.0,
-							z: 0.0,
-							w: 0.0,
-						},
-						y: Vec4 {
-							x: 0.0,
-							y: 2.0 / viewport_size[1],
-							z: 0.0,
-							w: 0.0,
-						},
-						z: Vec4 {
-							x: 0.0,
-							y: 0.0,
-							z: 1.0,
-							w: 0.0,
-						},
-						w: Vec4 {
-							x: -1.0,
-							y: -1.0,
-							z: 0.0,
-							w: 1.0,
-						},
-					};
+					let projection = Mat4::from_cols(
+						Vec4::new(2.0 / viewport_size[0], 0.0, 0.0, 0.0),
+						Vec4::new(0.0, 2.0 / viewport_size[1], 0.0, 0.0),
+						Vec4::new(0.0, 0.0, 1.0, 0.0),
+						Vec4::new(-1.0, -1.0, 0.0, 1.0),
+					);
 
 					let mut m = projection * m;
-					m.x = m.x * (size[0] / 2.0);
-					m.y = m.y * (size[1] / 2.0);
+					m.x_axis = m.x_axis * (size[0] / 2.0);
+					m.y_axis = m.y_axis * (size[1] / 2.0);
 
-					let tl = Vec4 {
-						x: -1.0,
-						y: -1.0,
-						z: 0.0,
-						w: 1.0,
-					};
-					let tr = Vec4 {
-						x: 1.0,
-						y: -1.0,
-						z: 0.0,
-						w: 1.0,
-					};
-					let bl = Vec4 {
-						x: -1.0,
-						y: 1.0,
-						z: 0.0,
-						w: 1.0,
-					};
-					let br = Vec4 {
-						x: 1.0,
-						y: 1.0,
-						z: 0.0,
-						w: 1.0,
-					};
+					let tl = Vec4::new(-1.0, -1.0, 0.0, 1.0);
+					let tr = Vec4::new(1.0, -1.0, 0.0, 1.0);
+					let bl = Vec4::new(-1.0, 1.0, 0.0, 1.0);
+					let br = Vec4::new(1.0, 1.0, 0.0, 1.0);
 
-					let projection = Mat4 {
-						x: Vec4 {
-							x: 0.5,
-							..Default::default()
-						},
-						y: Vec4 {
-							y: 0.5,
-							..Default::default()
-						},
-						z: Vec4 {
-							z: 1.0,
-							..Default::default()
-						},
-						w: Vec4 {
-							x: 0.5,
-							y: 0.5,
-							z: 0.0,
-							w: 1.0,
-						},
-					};
+					let projection = Mat4::from_cols(
+						Vec4::new(0.5, 0.0, 0.0, 0.0),
+						Vec4::new(0.0, 0.5, 0.0, 0.0),
+						Vec4::new(0.0, 0.0, 1.0, 0.0),
+						Vec4::new(0.5, 0.5, 0.0, 1.0),
+					);
 
 					let mut arr = [
 						projection * m * tl,
@@ -3486,7 +3194,7 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		);
 
 		let video_infos = [VideoInfo {
-			matrix: crate::aet::Mat4::default().into(),
+			matrix: Mat4::IDENTITY.to_cols_array_2d(),
 			color: [
 				self.background_color[0],
 				self.background_color[1],
@@ -3501,42 +3209,23 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 		.into_iter()
 		.chain(self.videos.iter().map(|video| {
 			let mut m = video.mat;
-			m.w =
-				m.x * (video.source_size[0] / 2.0) + m.y * (video.source_size[1] / 2.0) + m.z + m.w;
+			m.w_axis = m.x_axis * (video.source_size[0] / 2.0)
+				+ m.y_axis * (video.source_size[1] / 2.0)
+				+ m.z_axis + m.w_axis;
 
-			let projection = Mat4 {
-				x: Vec4 {
-					x: 2.0 / self.viewport_size[0],
-					y: 0.0,
-					z: 0.0,
-					w: 0.0,
-				},
-				y: Vec4 {
-					x: 0.0,
-					y: -2.0 / self.viewport_size[1],
-					z: 0.0,
-					w: 0.0,
-				},
-				z: Vec4 {
-					x: 0.0,
-					y: 0.0,
-					z: 1.0,
-					w: 0.0,
-				},
-				w: Vec4 {
-					x: -1.0,
-					y: 1.0,
-					z: 0.0,
-					w: 1.0,
-				},
-			};
+			let projection = Mat4::from_cols(
+				Vec4::new(2.0 / self.viewport_size[0], 0.0, 0.0, 0.0),
+				Vec4::new(0.0, -2.0 / self.viewport_size[1], 0.0, 0.0),
+				Vec4::new(0.0, 0.0, 1.0, 0.0),
+				Vec4::new(-1.0, 1.0, 0.0, 1.0),
+			);
 
 			let mut m = projection * m;
-			m.x = m.x * (video.source_size[0] / 2.0);
-			m.y = m.y * (-video.source_size[1] / 2.0);
+			m.x_axis = m.x_axis * (video.source_size[0] / 2.0);
+			m.y_axis = m.y_axis * (-video.source_size[1] / 2.0);
 
 			VideoInfo {
-				matrix: m.into(),
+				matrix: m.to_cols_array_2d(),
 				color: video.color,
 				has_matte: if video.has_matte { 1 } else { 0 },
 				_padding_0: 0,
@@ -3622,7 +3311,6 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 
 			let vertex_offset = if video.is_empty {
 				render_pass.set_bind_group(1, &textures.empty_texture, &[]);
-				render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
 				0
 			} else if video.has_matte {
 				let (base, matte) = &self.matte_sprites[video.matte_sprite_index];

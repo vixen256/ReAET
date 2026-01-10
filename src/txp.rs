@@ -651,7 +651,7 @@ impl TreeNode for TextureNode {
 		);
 
 		let video_info = VideoInfo {
-			matrix: crate::aet::Mat4::default().into(),
+			matrix: glam::Mat4::IDENTITY.to_cols_array_2d(),
 			color: [1.0, 1.0, 1.0, 1.0],
 			has_matte: 0,
 			_padding_0: 0,
@@ -1024,7 +1024,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 	let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 		label: Some("Video uniform buffer 0"),
 		contents: bytemuck::cast_slice(&[VideoInfo {
-			matrix: crate::aet::Mat4::default().into(),
+			matrix: glam::Mat4::IDENTITY.to_cols_array_2d(),
 			color: [1.0, 1.0, 1.0, 1.0],
 			has_matte: 0,
 			_padding_0: 0,
