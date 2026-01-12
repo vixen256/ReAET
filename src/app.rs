@@ -1181,6 +1181,16 @@ const REDO_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 	logical_key: egui::Key::Y,
 };
 
+pub const EXPORT_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND,
+	logical_key: egui::Key::E,
+};
+
+pub const REPLACE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
+	modifiers: egui::Modifiers::COMMAND,
+	logical_key: egui::Key::R,
+};
+
 impl eframe::App for App {
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 		ctx.input_mut(|input| {
@@ -1372,6 +1382,24 @@ impl eframe::App for App {
 							});
 							row.col(|ui| {
 								ui.label(ctx.format_shortcut(&REDO_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Export");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&EXPORT_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Replace");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&REPLACE_SHORTCUT));
 							});
 						});
 

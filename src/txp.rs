@@ -1,4 +1,4 @@
-use crate::app::TreeNode;
+use crate::app::{EXPORT_SHORTCUT, REPLACE_SHORTCUT, TreeNode};
 use crate::spr_db::*;
 use eframe::egui;
 use eframe::egui::Widget;
@@ -283,6 +283,96 @@ impl TextureNode {
 			self.texture_updated = true;
 		}
 	}
+
+	fn export(&mut self) {
+		let mip = self.texture.get_mipmap(0, 0).unwrap();
+
+		let rgba = if self.texture.is_ycbcr() {
+			self.texture.decode_ycbcr()
+		} else {
+			mip.rgba()
+		};
+
+		let Some(rgba) = rgba else {
+			self.error = Some(String::from("Could not convert texture to RGBA"));
+			return;
+		};
+
+		let Some(image) = image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+		else {
+			return;
+		};
+
+		let name = self.name.clone();
+		std::thread::spawn(move || {
+			tokio::runtime::Builder::new_current_thread()
+				.enable_io()
+				.build()
+				.unwrap()
+				.block_on(async {
+					let Some(file) = rfd::AsyncFileDialog::new()
+						.add_filter(
+							"Images (.avif, .bmp, .jpg, .png, .webp)",
+							&["avif", "bmp", "jpg", "jpeg", "png", "webp"],
+						)
+						.set_file_name(format!("{name}.png"))
+						.save_file()
+						.await
+					else {
+						return;
+					};
+
+					let path = std::path::PathBuf::from(file.file_name());
+					let extension = path.extension().unwrap_or_default();
+					let Some(format) = image::ImageFormat::from_extension(extension) else {
+						return;
+					};
+
+					let mut buf = std::io::Cursor::new(Vec::new());
+
+					if image::DynamicImage::ImageRgba8(image)
+						.flipv()
+						.write_to(&mut buf, format)
+						.is_err()
+					{
+						return;
+					};
+
+					file.write(&buf.into_inner()).await.unwrap();
+				});
+		});
+	}
+
+	fn replace(&mut self) {
+		let (tx, rx) = mpsc::channel();
+		let name = self.name.clone();
+		std::thread::spawn(move || {
+			tokio::runtime::Builder::new_current_thread()
+				.enable_io()
+				.build()
+				.unwrap()
+				.block_on(async {
+					let Some(file) = rfd::AsyncFileDialog::new()
+						.add_filter(
+							"Images (.avif, .bmp, .jpg, .png, .webp)",
+							&["avif", "bmp", "jpg", "jpeg", "png", "webp"],
+						)
+						.set_file_name(name)
+						.pick_file()
+						.await
+					else {
+						tx.send(None).unwrap();
+						return;
+					};
+
+					let path = file.path();
+					let data = file.read().await;
+					tx.send(Some((path.to_path_buf(), data))).unwrap();
+				});
+		});
+
+		self.file_picker_result = Some(rx);
+	}
 }
 
 impl TreeNode for TextureNode {
@@ -295,95 +385,26 @@ impl TreeNode for TextureNode {
 	}
 
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
-		if ui.button("Export").clicked() {
-			let mip = self.texture.get_mipmap(0, 0).unwrap();
-
-			let rgba = if self.texture.is_ycbcr() {
-				self.texture.decode_ycbcr()
-			} else {
-				mip.rgba()
-			};
-
-			let Some(rgba) = rgba else {
-				self.error = Some(String::from("Could not convert texture to RGBA"));
-				return;
-			};
-
-			let Some(image) =
-				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
-			else {
-				return;
-			};
-
-			let name = self.name.clone();
-			std::thread::spawn(move || {
-				tokio::runtime::Builder::new_current_thread()
-					.enable_io()
-					.build()
-					.unwrap()
-					.block_on(async {
-						let Some(file) = rfd::AsyncFileDialog::new()
-							.add_filter(
-								"Images (.avif, .bmp, .jpg, .png, .webp)",
-								&["avif", "bmp", "jpg", "jpeg", "png", "webp"],
-							)
-							.set_file_name(format!("{name}.png"))
-							.save_file()
-							.await
-						else {
-							return;
-						};
-
-						let path = std::path::PathBuf::from(file.file_name());
-						let extension = path.extension().unwrap_or_default();
-						let Some(format) = image::ImageFormat::from_extension(extension) else {
-							return;
-						};
-
-						let mut buf = std::io::Cursor::new(Vec::new());
-
-						if image::DynamicImage::ImageRgba8(image)
-							.flipv()
-							.write_to(&mut buf, format)
-							.is_err()
-						{
-							return;
-						};
-
-						file.write(&buf.into_inner()).await.unwrap();
-					});
-			});
+		if ui
+			.add(
+				egui::Button::new("Export")
+					.shortcut_text(ui.ctx().format_shortcut(&EXPORT_SHORTCUT)),
+			)
+			.clicked()
+		{
+			self.export();
 		}
-		if ui.button("Replace").clicked() {
-			let (tx, rx) = mpsc::channel();
-			let name = self.name.clone();
-			std::thread::spawn(move || {
-				tokio::runtime::Builder::new_current_thread()
-					.enable_io()
-					.build()
-					.unwrap()
-					.block_on(async {
-						let Some(file) = rfd::AsyncFileDialog::new()
-							.add_filter(
-								"Images (.avif, .bmp, .jpg, .png, .webp)",
-								&["avif", "bmp", "jpg", "jpeg", "png", "webp"],
-							)
-							.set_file_name(name)
-							.pick_file()
-							.await
-						else {
-							tx.send(None).unwrap();
-							return;
-						};
 
-						let path = file.path();
-						let data = file.read().await;
-						tx.send(Some((path.to_path_buf(), data))).unwrap();
-					});
-			});
-
-			self.file_picker_result = Some(rx);
+		if ui
+			.add(
+				egui::Button::new("Replace")
+					.shortcut_text(ui.ctx().format_shortcut(&REPLACE_SHORTCUT)),
+			)
+			.clicked()
+		{
+			self.replace();
 		}
+
 		if ui.button("Remove").clicked() {
 			self.want_deletion = true;
 		}
@@ -413,6 +434,12 @@ impl TreeNode for TextureNode {
 				self.pick_file(&path, &data, frame);
 			}
 			self.file_picker_result = None;
+		}
+
+		if ui.input_mut(|i| i.consume_shortcut(&EXPORT_SHORTCUT)) {
+			self.export();
+		} else if ui.input_mut(|i| i.consume_shortcut(&REPLACE_SHORTCUT)) {
+			self.replace();
 		}
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);
