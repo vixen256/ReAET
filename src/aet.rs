@@ -245,6 +245,7 @@ impl TreeNode for AetSceneNode {
 		selected: &mut Vec<usize>,
 		frame: &mut eframe::Frame,
 		undoer: &mut crate::app::LayerUndoer,
+		children: &mut Vec<(Vec<usize>, egui::Response)>,
 	) -> egui::Response {
 		let resp = crate::app::collapsing_selectable_label(
 			ui,
@@ -252,7 +253,8 @@ impl TreeNode for AetSceneNode {
 			path,
 			path == *selected,
 			|ui| {
-				self.root.display_tree(ui, path, selected, frame, undoer);
+				self.root
+					.display_tree(ui, path, selected, frame, undoer, children);
 			},
 		)
 		.header_response;
@@ -513,10 +515,10 @@ impl AetSceneNode {
 
 				self.gizmo.update_config(GizmoConfig {
 					projection_matrix: [
-						[2.0 / self.width as f64, 0.0, 0.0, 0.0],
-						[0.0, 2.0 / self.height as f64, 0.0, 0.0],
+						[2.0 / self.width as f64, 0.0, 0.0, -1.0],
+						[0.0, 2.0 / self.height as f64, 0.0, -1.0],
 						[0.0, 0.0, 1.0, 0.0],
-						[-1.0, -1.0, 0.0, 1.0],
+						[0.0, 0.0, 0.0, 1.0],
 					]
 					.into(),
 					viewport: rect,
@@ -1458,6 +1460,7 @@ impl AetCompNode {
 		selected: &mut Vec<usize>,
 		frame: &mut eframe::Frame,
 		undoer: &mut crate::app::LayerUndoer,
+		children: &mut Vec<(Vec<usize>, egui::Response)>,
 	) -> egui::Response {
 		let mut last_resp = None;
 		let resp = egui_dnd::dnd(ui, ui.id()).show_custom(|ui, iter| {
@@ -1465,7 +1468,7 @@ impl AetCompNode {
 				let mut layer = layer.try_lock().unwrap();
 				iter.next(
 					ui,
-					ui.make_persistent_id(egui::Id::new(&layer.name).with(path).with(i)),
+					ui.make_persistent_id(egui::Id::new(&path).with(i)),
 					i,
 					true,
 					|ui, item_handle| {
@@ -1479,6 +1482,7 @@ impl AetCompNode {
 									selected,
 									frame,
 									undoer,
+									children,
 								);
 
 								if ui.available_width() < 10.0 {
@@ -1696,6 +1700,7 @@ impl TreeNode for AetLayerNode {
 		selected: &mut Vec<usize>,
 		frame: &mut eframe::Frame,
 		undoer: &mut crate::app::LayerUndoer,
+		children: &mut Vec<(Vec<usize>, egui::Response)>,
 	) -> egui::Response {
 		let resp = ui
 			.horizontal(|ui| {
@@ -1714,7 +1719,7 @@ impl TreeNode for AetLayerNode {
 								panic!();
 							};
 
-							comp.display_tree(ui, path, selected, frame, undoer);
+							comp.display_tree(ui, path, selected, frame, undoer, children);
 
 							if comp.layers.iter().any(|layer| {
 								let layer = layer.try_lock().unwrap();

@@ -29,6 +29,7 @@ pub trait TreeNode {
 		_selected: &mut Vec<usize>,
 		_frame: &mut eframe::Frame,
 		_undoer: &mut LayerUndoer,
+		_children: &mut Vec<(Vec<usize>, egui::Response)>,
 	) -> egui::Response {
 		ui.response()
 	}
@@ -339,8 +340,18 @@ pub fn collapsing_selectable_label<R>(
 
 				if ui
 					.interact(icon_rect, id.with("Icon"), egui::Sense::click())
-					.clicked()
-				{
+					.clicked() || (selected
+					&& ui.memory(|mem| mem.focused().is_none())
+					&& ui.input_mut(|i| {
+						i.consume_key(
+							egui::Modifiers::NONE,
+							if state.is_open() {
+								egui::Key::ArrowLeft
+							} else {
+								egui::Key::ArrowRight
+							},
+						)
+					})) {
 					state.toggle(ui);
 					header_response.mark_changed();
 				}
@@ -471,12 +482,16 @@ pub fn show_node(
 	selected: &mut Vec<usize>,
 	frame: &mut eframe::Frame,
 	undoer: &mut LayerUndoer,
+	children: &mut Vec<(Vec<usize>, egui::Response)>,
 ) -> egui::Response {
 	let mut path = path.to_vec();
 	path.push(index);
 
-	if node.has_custom_tree() {
-		node.display_tree(ui, &path, selected, frame, undoer)
+	let child_index = children.len();
+	children.push((path.clone(), ui.response()));
+
+	let resp = if node.has_custom_tree() {
+		node.display_tree(ui, &path, selected, frame, undoer, children)
 	} else if node.has_children() {
 		let resp = ui
 			.horizontal(|ui| {
@@ -490,7 +505,7 @@ pub fn show_node(
 					|ui| {
 						let mut index = 0;
 						node.display_children(&mut |child| {
-							show_node(ui, child, index, &path, selected, frame, undoer);
+							show_node(ui, child, index, &path, selected, frame, undoer, children);
 							index += 1;
 						});
 					},
@@ -536,7 +551,38 @@ pub fn show_node(
 		}
 
 		resp
+	};
+
+	children[child_index].1 = resp.clone();
+	resp
+}
+
+fn set_node_selected(
+	node: &mut dyn TreeNode,
+	index: usize,
+	depth: usize,
+	path: &[usize],
+	desired_path: &[usize],
+	frame: &mut eframe::Frame,
+) {
+	if depth == desired_path.len() - 1 {
+		if desired_path[depth] == index {
+			node.selected(frame);
+		}
+		return;
 	}
+
+	let desired_index = desired_path[depth + 1];
+	let mut new_path = path.to_vec();
+	new_path.push(index);
+
+	let mut index = 0;
+	node.display_children(&mut |child| {
+		if index == desired_index {
+			set_node_selected(child, index, depth + 1, &new_path, desired_path, frame);
+		}
+		index += 1;
+	});
 }
 
 fn show_node_opts(
@@ -1558,6 +1604,7 @@ impl eframe::App for App {
 				}
 
 				egui::ScrollArea::vertical().show(ui, |ui| {
+					let mut children = Vec::new();
 					if let Some(node) = &mut self.aet_set {
 						let old_selected = self.selected.clone();
 
@@ -1569,6 +1616,7 @@ impl eframe::App for App {
 							&mut self.selected,
 							frame,
 							&mut self.undoer,
+							&mut children,
 						);
 
 						if self.selected.len() >= 3
@@ -1650,6 +1698,7 @@ impl eframe::App for App {
 							&mut self.selected,
 							frame,
 							&mut self.undoer,
+							&mut children,
 						);
 					}
 					if let Some(node) = &mut self.spr_db {
@@ -1661,7 +1710,65 @@ impl eframe::App for App {
 							&mut self.selected,
 							frame,
 							&mut self.undoer,
+							&mut children,
 						);
+					}
+
+					if !self.selected.is_empty()
+						&& ui.memory(|mem| mem.focused().is_none())
+						&& let Some(index) = children.iter().position(|(c, _)| c == &self.selected)
+					{
+						if index != 0
+							&& ui.input_mut(|i| {
+								i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
+							}) {
+							let (path, resp) = children[index - 1].clone();
+							self.selected = path;
+							resp.scroll_to_me(None);
+
+							let root = if self.selected[0] == 0 {
+								self.aet_set.as_mut().unwrap() as &mut dyn TreeNode
+							} else if self.selected[0] == 1 {
+								self.sprite_set.as_mut().unwrap() as &mut dyn TreeNode
+							} else if self.selected[0] == 2 {
+								self.spr_db.as_mut().unwrap() as &mut dyn TreeNode
+							} else {
+								unreachable!()
+							};
+							set_node_selected(
+								root,
+								self.selected[0],
+								0,
+								&[],
+								&self.selected,
+								frame,
+							);
+						} else if index != children.len() - 1
+							&& ui.input_mut(|i| {
+								i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)
+							}) {
+							let (path, resp) = children[index + 1].clone();
+							self.selected = path;
+							resp.scroll_to_me(None);
+
+							let root = if self.selected[0] == 0 {
+								self.aet_set.as_mut().unwrap() as &mut dyn TreeNode
+							} else if self.selected[0] == 1 {
+								self.sprite_set.as_mut().unwrap() as &mut dyn TreeNode
+							} else if self.selected[0] == 2 {
+								self.spr_db.as_mut().unwrap() as &mut dyn TreeNode
+							} else {
+								unreachable!()
+							};
+							set_node_selected(
+								root,
+								self.selected[0],
+								0,
+								&[],
+								&self.selected,
+								frame,
+							);
+						}
 					}
 
 					ui.take_available_space();
@@ -1680,20 +1787,6 @@ impl eframe::App for App {
 								input.consume_key(egui::Modifiers::NONE, egui::Key::Space)
 							}) {
 								scene.playing = !scene.playing;
-							}
-
-							if ui.input_mut(|input| {
-								input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft)
-							}) {
-								scene.current_time = (scene.current_time - 1.0)
-									.clamp(scene.start_time, scene.end_time);
-							}
-
-							if ui.input_mut(|input| {
-								input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight)
-							}) {
-								scene.current_time = (scene.current_time + 1.0)
-									.clamp(scene.start_time, scene.end_time);
 							}
 						}
 
@@ -1887,10 +1980,10 @@ impl eframe::App for App {
 				if has_multi_select {
 					scene.gizmo.update_config(GizmoConfig {
 						projection_matrix: [
-							[2.0 / scene.width as f64, 0.0, 0.0, 0.0],
-							[0.0, 2.0 / scene.height as f64, 0.0, 0.0],
+							[2.0 / scene.width as f64, 0.0, 0.0, -1.0],
+							[0.0, 2.0 / scene.height as f64, 0.0, -1.0],
 							[0.0, 0.0, 1.0, 0.0],
-							[-1.0, -1.0, 0.0, 1.0],
+							[0.0, 0.0, 0.0, 1.0],
 						]
 						.into(),
 						viewport: rect,
