@@ -512,12 +512,12 @@ impl AetSceneNode {
 				m.w_axis.z = 0.0;
 
 				self.gizmo.update_config(GizmoConfig {
-					projection_matrix: transform_gizmo_egui::math::DMat4::from_cols_array_2d(&[
+					projection_matrix: [
 						[2.0 / self.width as f64, 0.0, 0.0, 0.0],
 						[0.0, 2.0 / self.height as f64, 0.0, 0.0],
-						[-1.0, -1.0, -1.0, 0.0],
+						[0.0, 0.0, 1.0, 0.0],
 						[-1.0, -1.0, 0.0, 1.0],
-					])
+					]
 					.into(),
 					viewport: rect,
 					modes: GizmoMode::TranslateX
@@ -532,18 +532,18 @@ impl AetSceneNode {
 				let (scale, rotation, translation) = m.to_scale_rotation_translation();
 				let transform =
 					transform_gizmo_egui::math::Transform::from_scale_rotation_translation(
-						glam::dvec3(scale.x as f64, scale.y as f64, scale.z as f64),
-						glam::dquat(
+						[scale.x as f64, scale.y as f64, scale.z as f64],
+						[
 							rotation.x as f64,
 							rotation.y as f64,
 							rotation.z as f64,
 							rotation.w as f64,
-						),
-						glam::dvec3(
+						],
+						[
 							translation.x as f64,
 							translation.y as f64,
 							translation.z as f64,
-						),
+						],
 					);
 
 				if let Some((result, _)) = self.gizmo.interact(ui, &[transform]) {
@@ -582,7 +582,7 @@ impl AetSceneNode {
 												previous
 											}
 										}) {
-									key.value += delta.x as f32;
+									key.value += delta.x as f32 / m.x_axis.x;
 								} else {
 									video.pos_x.keys[0].value += delta.x as f32 / m.x_axis.x;
 								}
@@ -603,7 +603,7 @@ impl AetSceneNode {
 												previous
 											}
 										}) {
-									key.value += -delta.y as f32;
+									key.value += -delta.y as f32 / m.y_axis.y;
 								} else {
 									video.pos_y.keys[0].value += -delta.y as f32 / m.y_axis.y;
 								}

@@ -1886,17 +1886,18 @@ impl eframe::App for App {
 
 				if has_multi_select {
 					scene.gizmo.update_config(GizmoConfig {
-						projection_matrix: transform_gizmo_egui::math::DMat4::from_cols_array_2d(
-							&[
-								[2.0 / scene.width as f64, 0.0, 0.0, 0.0],
-								[0.0, 2.0 / scene.height as f64, 0.0, 0.0],
-								[-1.0, -1.0, -1.0, 0.0],
-								[-1.0, -1.0, 0.0, 1.0],
-							],
-						)
+						projection_matrix: [
+							[2.0 / scene.width as f64, 0.0, 0.0, 0.0],
+							[0.0, 2.0 / scene.height as f64, 0.0, 0.0],
+							[0.0, 0.0, 1.0, 0.0],
+							[-1.0, -1.0, 0.0, 1.0],
+						]
 						.into(),
 						viewport: rect,
-						modes: GizmoMode::TranslateX | GizmoMode::TranslateY | GizmoMode::RotateZ,
+						modes: GizmoMode::TranslateX
+							| GizmoMode::TranslateY
+							| GizmoMode::TranslateView
+							| GizmoMode::RotateZ,
 						snapping: true,
 						snap_distance: 5.0,
 						..Default::default()
@@ -1904,13 +1905,9 @@ impl eframe::App for App {
 
 					let transform =
 						transform_gizmo_egui::math::Transform::from_scale_rotation_translation(
-							transform_gizmo_egui::math::DVec3::default(),
-							transform_gizmo_egui::math::DQuat::default(),
-							transform_gizmo_egui::math::DVec3::from_array([
-								scene.width as f64 / 2.0,
-								scene.height as f64 / 2.0,
-								0.0,
-							]),
+							glam::DVec3::default(),
+							glam::DQuat::default(),
+							[scene.width as f64 / 2.0, scene.height as f64 / 2.0, 0.0],
 						);
 
 					if let Some((result, _)) = scene.gizmo.interact(ui, &[transform]) {

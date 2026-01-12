@@ -1043,21 +1043,6 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 	) -> Vec<wgpu::CommandBuffer> {
 		let resources: &WgpuRenderResources = callback_resources.get().unwrap();
 
-		let spr_info = VideoInfo {
-			matrix: glam::Mat4::IDENTITY.to_cols_array_2d(),
-			color: [1.0, 1.0, 1.0, 1.0],
-			has_matte: 0,
-			_padding_0: 0,
-			_padding_1: 0,
-			_padding_2: 0,
-		};
-
-		queue.write_buffer(
-			&resources.uniform_buffer,
-			0,
-			bytemuck::cast_slice(&[spr_info]),
-		);
-
 		let verticies = [
 			Vertex {
 				position: [-1.0, 1.0],
@@ -1085,12 +1070,6 @@ impl egui_wgpu::CallbackTrait for WgpuSpriteCallback {
 			&resources.vertex_buffer,
 			0,
 			bytemuck::cast_slice(&verticies),
-		);
-
-		queue.write_buffer(
-			&resources.projection_buffer,
-			0,
-			bytemuck::bytes_of(&glam::Mat4::IDENTITY),
 		);
 
 		Vec::new()
