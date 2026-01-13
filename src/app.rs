@@ -229,6 +229,7 @@ pub struct App {
 	help_modal: bool,
 
 	undoer: LayerUndoer,
+	copied_layer: Option<aet::AetLayerNode>,
 }
 
 impl App {
@@ -263,6 +264,7 @@ impl App {
 			modern_writing_modal: false,
 			help_modal: false,
 			undoer: LayerUndoer::new(),
+			copied_layer: None,
 		})
 	}
 }
@@ -1193,111 +1195,153 @@ pub const REPLACE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 
 impl eframe::App for App {
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-		ctx.input_mut(|input| {
-			for file in &input.raw.dropped_files {
-				if let Some(path) = &file.path
-					&& path.is_file()
-					&& let Ok(data) = std::fs::read(path)
-				{
-					self.set_file(frame, path, &data);
-				}
-			}
-
-			if input.consume_shortcut(&OPEN_SHORTCUT) {
-				let (tx, rx) = mpsc::channel();
-				std::thread::spawn(move || {
-					tokio::runtime::Builder::new_current_thread()
-						.enable_io()
-						.build()
-						.unwrap()
-						.block_on(async {
-							let Some(file) = rfd::AsyncFileDialog::new()
-								.add_filter("DIVA", &["farc", "bin"])
-								.pick_file()
-								.await
-							else {
-								tx.send(None).unwrap();
-								return;
-							};
-
-							let path = file.path();
-							let data = file.read().await;
-							tx.send(Some((path.to_path_buf(), data))).unwrap();
-						});
-				});
-
-				self.file_picker_result = Some(rx);
-				self.selected = Vec::new();
-			}
-
-			if input.consume_shortcut(&SAVE_TO_SHORTCUT) {
-				self.save_files_to();
-			}
-
-			if input.consume_shortcut(&SAVE_SHORTCUT) {
-				self.save_files();
-			}
-
-			if input.consume_shortcut(&CLOSE_SHORTCUT) {
-				self.aet_set = None;
-				self.aet_set_filepath = None;
-				self.sprite_set = None;
-				self.sprite_set_filepath = None;
-				self.spr_db = None;
-				self.spr_db_filepath = None;
-				self.selected = Vec::new();
-			}
-
-			if let Some(aet_set) = &mut self.aet_set {
-				if self.undoer.has_undo() && input.consume_shortcut(&UNDO_SHORTCUT) {
-					apply_undo(aet_set, &mut self.undoer);
-
-					if let Some(spr_db) = &self.spr_db
-						&& let Some(spr_set) = &self.sprite_set
+		if ctx.memory(|mem| mem.focused().is_none()) {
+			ctx.input_mut(|input| {
+				for file in &input.raw.dropped_files {
+					if let Some(path) = &file.path
+						&& path.is_file() && let Ok(data) = std::fs::read(path)
 					{
-						for scene in &mut aet_set.scenes {
-							scene.root.update_video_textures(spr_db, spr_set);
-						}
+						self.set_file(frame, path, &data);
 					}
-
-					self.multi_select.clear();
 				}
 
-				if self.undoer.has_redo() && input.consume_shortcut(&REDO_SHORTCUT) {
-					apply_redo(aet_set, &mut self.undoer);
+				if input.consume_shortcut(&OPEN_SHORTCUT) {
+					let (tx, rx) = mpsc::channel();
+					std::thread::spawn(move || {
+						tokio::runtime::Builder::new_current_thread()
+							.enable_io()
+							.build()
+							.unwrap()
+							.block_on(async {
+								let Some(file) = rfd::AsyncFileDialog::new()
+									.add_filter("DIVA", &["farc", "bin"])
+									.pick_file()
+									.await
+								else {
+									tx.send(None).unwrap();
+									return;
+								};
 
-					if let Some(spr_db) = &self.spr_db
-						&& let Some(spr_set) = &self.sprite_set
-					{
-						for scene in &mut aet_set.scenes {
-							scene.root.update_video_textures(spr_db, spr_set);
-						}
-					}
+								let path = file.path();
+								let data = file.read().await;
+								tx.send(Some((path.to_path_buf(), data))).unwrap();
+							});
+					});
 
-					self.multi_select.clear();
+					self.file_picker_result = Some(rx);
+					self.selected = Vec::new();
 				}
 
-				if !self.multi_select.is_empty() {
-					if input.key_pressed(egui::Key::Delete)
-						|| self
-							.multi_select
-							.iter()
-							.any(|layer| layer.try_lock().unwrap().want_deletion)
-					{
-						for layer in &mut self.multi_select {
-							layer.try_lock().unwrap().want_deletion = true;
+				if input.consume_shortcut(&SAVE_TO_SHORTCUT) {
+					self.save_files_to();
+				}
+
+				if input.consume_shortcut(&SAVE_SHORTCUT) {
+					self.save_files();
+				}
+
+				if input.consume_shortcut(&CLOSE_SHORTCUT) {
+					self.aet_set = None;
+					self.aet_set_filepath = None;
+					self.sprite_set = None;
+					self.sprite_set_filepath = None;
+					self.spr_db = None;
+					self.spr_db_filepath = None;
+					self.selected = Vec::new();
+				}
+
+				if let Some(aet_set) = &mut self.aet_set {
+					if self.undoer.has_undo() && input.consume_shortcut(&UNDO_SHORTCUT) {
+						apply_undo(aet_set, &mut self.undoer);
+
+						if let Some(spr_db) = &self.spr_db
+							&& let Some(spr_set) = &self.sprite_set
+						{
+							for scene in &mut aet_set.scenes {
+								scene.root.update_video_textures(spr_db, spr_set);
+							}
 						}
+
 						self.multi_select.clear();
 					}
-				} else if self.selected.len() >= 3
-					&& self.selected[0] == 0
-					&& input.key_pressed(egui::Key::Delete)
-				{
-					let layer = get_selected_layer(aet_set, &self.selected);
-					layer.try_lock().unwrap().want_deletion = true;
+
+					if self.undoer.has_redo() && input.consume_shortcut(&REDO_SHORTCUT) {
+						apply_redo(aet_set, &mut self.undoer);
+
+						if let Some(spr_db) = &self.spr_db
+							&& let Some(spr_set) = &self.sprite_set
+						{
+							for scene in &mut aet_set.scenes {
+								scene.root.update_video_textures(spr_db, spr_set);
+							}
+						}
+
+						self.multi_select.clear();
+					}
+
+					if !self.multi_select.is_empty() {
+						if input.key_pressed(egui::Key::Delete)
+							|| self
+								.multi_select
+								.iter()
+								.any(|layer| layer.try_lock().unwrap().want_deletion)
+						{
+							for layer in &mut self.multi_select {
+								layer.try_lock().unwrap().want_deletion = true;
+							}
+							self.multi_select.clear();
+						}
+					} else if self.selected.len() >= 3
+						&& self.selected[0] == 0
+						&& input.key_pressed(egui::Key::Delete)
+					{
+						let layer = get_selected_layer(aet_set, &self.selected);
+						layer.try_lock().unwrap().want_deletion = true;
+					}
+
+					if self.selected.len() >= 3 && self.selected[0] == 0 {
+						let selected = get_selected_layer(aet_set, &self.selected);
+						if input.events.iter().any(|e| matches!(e, egui::Event::Copy)) {
+							self.copied_layer = Some(selected.try_lock().unwrap().deep_clone());
+						} else if input.events.iter().any(|e| match e {
+							egui::Event::Key {
+								key,
+								physical_key: _,
+								pressed: _,
+								repeat: _,
+								modifiers,
+							} => {
+								*key == egui::Key::V
+									&& modifiers.matches_exact(egui::Modifiers::COMMAND)
+							}
+							_ => false,
+						}) && let Some(copied_layer) = &self.copied_layer
+						{
+							*selected.try_lock().unwrap() = copied_layer.clone();
+						} else if input.events.iter().any(|e| match e {
+							egui::Event::Key {
+								key,
+								physical_key: _,
+								pressed: _,
+								repeat: _,
+								modifiers,
+							} => {
+								*key == egui::Key::V
+									&& modifiers.matches_exact(
+										egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+									)
+							}
+							_ => false,
+						}) && let Some(copied_layer) = &self.copied_layer
+							&& let aet::AetItemNode::Comp(comp) =
+								&mut selected.try_lock().unwrap().item
+						{
+							comp.layers.push(Rc::new(Mutex::new(copied_layer.clone())));
+						}
+					}
 				}
-			}
-		});
+			});
+		}
 
 		if self.modern_writing_modal {
 			let modal = egui::Modal::new(egui::Id::new("ModernWritingModal")).show(ctx, |ui| {
@@ -1400,6 +1444,42 @@ impl eframe::App for App {
 							});
 							row.col(|ui| {
 								ui.label(ctx.format_shortcut(&REPLACE_SHORTCUT));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Copy");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
+									modifiers: egui::Modifiers::COMMAND,
+									logical_key: egui::Key::C,
+								}));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Paste");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
+									modifiers: egui::Modifiers::COMMAND,
+									logical_key: egui::Key::V,
+								}));
+							});
+						});
+
+						body.row(height, |mut row| {
+							row.col(|ui| {
+								ui.label("Paste into");
+							});
+							row.col(|ui| {
+								ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
+									modifiers: egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+									logical_key: egui::Key::V,
+								}));
 							});
 						});
 
