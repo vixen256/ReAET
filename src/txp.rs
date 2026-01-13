@@ -440,6 +440,114 @@ impl TreeNode for TextureNode {
 			self.export();
 		} else if ui.input_mut(|i| i.consume_shortcut(&REPLACE_SHORTCUT)) {
 			self.replace();
+		} else if ui.memory(|mem| mem.focused().is_none())
+			&& ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy)))
+		{
+			let mip = self.texture.get_mipmap(0, 0).unwrap();
+
+			let rgba = if self.texture.is_ycbcr() {
+				self.texture.decode_ycbcr()
+			} else {
+				mip.rgba()
+			};
+
+			let Some(rgba) = rgba else {
+				self.error = Some(String::from("Could not convert texture to RGBA"));
+				return;
+			};
+
+			let Some(image) =
+				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+			else {
+				return;
+			};
+
+			arboard::Clipboard::new()
+				.unwrap()
+				.set_image(arboard::ImageData {
+					width: mip.width() as usize,
+					height: mip.height() as usize,
+					bytes: image::DynamicImage::ImageRgba8(image)
+						.flipv()
+						.as_bytes()
+						.into(),
+				})
+				.unwrap();
+		} else if ui.memory(|mem| mem.focused().is_none())
+			&& ui.input(|i| {
+				i.events.iter().any(|e| match e {
+					egui::Event::Key {
+						key,
+						physical_key: _,
+						pressed: _,
+						repeat: _,
+						modifiers,
+					} => *key == egui::Key::V && modifiers.command_only(),
+					_ => false,
+				})
+			}) && let Ok(image) = arboard::Clipboard::new().unwrap().get_image()
+			&& let Some(image) = image::RgbaImage::from_raw(
+				image.width as u32,
+				image.height as u32,
+				image.bytes.to_vec(),
+			) {
+			let image = image::DynamicImage::ImageRgba8(image);
+
+			if self.texture.is_ycbcr() {
+				let render_state = &frame.wgpu_render_state().unwrap();
+				let Some(texture) = txp::Texture::encode_ycbcr(
+					image.width(),
+					image.height(),
+					image.flipv().to_rgba8().as_bytes(),
+					&render_state.device,
+					&render_state.queue,
+				) else {
+					self.error = Some(String::from("Could not encode image"));
+					return;
+				};
+				self.texture = texture;
+				self.texture_updated = true;
+			} else {
+				let mut texture = txp::Texture::new();
+				texture.set_has_cube_map(false);
+				texture.set_array_size(1);
+				texture.set_mipmaps_count(self.texture.mipmaps_count());
+
+				for i in 0..self.texture.mipmaps_count() {
+					let scale = 2_u32.pow(i as u32);
+					let (width, height) = if scale == 0 {
+						(image.width(), image.height())
+					} else {
+						(image.width() / scale, image.height() / scale)
+					};
+
+					if width == 0 || height == 0 {
+						texture.set_mipmaps_count(i);
+						break;
+					}
+
+					let render_state = &frame.wgpu_render_state().unwrap();
+					let Some(mipmap) = txp::Mipmap::from_rgba_gpu(
+						width as i32,
+						height as i32,
+						image
+							.flipv()
+							.resize(width, height, image::imageops::FilterType::Lanczos3)
+							.to_rgba8()
+							.as_bytes(),
+						self.texture.get_mipmap(0, i).unwrap().format(),
+						&render_state.device,
+						&render_state.queue,
+					) else {
+						self.error = Some(String::from("Could not encode image"));
+						return;
+					};
+
+					texture.add_mipmap(&mipmap);
+				}
+				self.texture = texture;
+				self.texture_updated = true;
+			}
 		}
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);

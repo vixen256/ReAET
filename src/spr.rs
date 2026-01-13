@@ -861,6 +861,131 @@ impl TreeNode for SpriteInfoNode {
 			self.export();
 		} else if ui.input_mut(|i| i.consume_shortcut(&REPLACE_SHORTCUT)) {
 			self.replace();
+		} else if ui.memory(|mem| mem.focused().is_none())
+			&& ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy)))
+		{
+			let texture = self.texture.try_lock().unwrap();
+			let mip = texture.texture.get_mipmap(0, 0).unwrap();
+
+			let rgba = if texture.texture.is_ycbcr() {
+				texture.texture.decode_ycbcr()
+			} else {
+				mip.rgba()
+			};
+
+			let Some(rgba) = rgba else {
+				self.error = Some(String::from("Could not convert texture to RGBA"));
+				return;
+			};
+
+			let Some(image) =
+				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+			else {
+				self.error = Some(String::from("Could not load image"));
+				return;
+			};
+
+			arboard::Clipboard::new()
+				.unwrap()
+				.set_image(arboard::ImageData {
+					width: self.info.width() as usize,
+					height: self.info.height() as usize,
+					bytes: image::DynamicImage::ImageRgba8(image)
+						.flipv()
+						.crop(
+							self.info.px() as u32,
+							self.info.py() as u32,
+							self.info.width() as u32,
+							self.info.height() as u32,
+						)
+						.as_bytes()
+						.into(),
+				})
+				.unwrap();
+		} else if ui.memory(|mem| mem.focused().is_none())
+			&& ui.input(|i| {
+				i.events.iter().any(|e| match e {
+					egui::Event::Key {
+						key,
+						physical_key: _,
+						pressed: _,
+						repeat: _,
+						modifiers,
+					} => *key == egui::Key::V && modifiers.command_only(),
+					_ => false,
+				})
+			}) && let Ok(new_image) = arboard::Clipboard::new().unwrap().get_image()
+			&& new_image.width == self.info.width() as usize
+			&& new_image.height == self.info.height() as usize
+			&& let Some(new_image) = image::RgbaImage::from_raw(
+				new_image.width as u32,
+				new_image.height as u32,
+				new_image.bytes.to_vec(),
+			) {
+			let mut texture = self.texture.try_lock().unwrap();
+			let mip = texture.texture.get_mipmap(0, 0).unwrap();
+			let rgba = if texture.texture.is_ycbcr() {
+				texture.texture.decode_ycbcr()
+			} else {
+				let render_state = &frame.wgpu_render_state().unwrap();
+				mip.to_rgba_gpu(&render_state.device, &render_state.queue)
+			};
+			let Some(rgba) = rgba else {
+				self.error = Some(String::from("Failed to convert current texture to RGBA"));
+				return;
+			};
+			let Some(mut image) =
+				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+			else {
+				self.error = Some(String::from("Could not load image"));
+				return;
+			};
+
+			if let Err(e) = image.copy_from(
+				&image::DynamicImage::ImageRgba8(new_image).flipv(),
+				self.info.px() as u32,
+				mip.height() as u32 - self.info.py() as u32 - self.info.height() as u32,
+			) {
+				self.error = Some(format!("Could not copy sprite into current image {e}"));
+				return;
+			}
+
+			if texture.texture.is_ycbcr() {
+				let render_state = &frame.wgpu_render_state().unwrap();
+				let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
+					image.width(),
+					image.height(),
+					image.as_bytes(),
+					&render_state.device,
+					&render_state.queue,
+				) else {
+					self.error = Some(String::from("Could not encode image"));
+					return;
+				};
+				texture.texture = tex;
+				texture.texture_updated = true;
+			} else {
+				let render_state = &frame.wgpu_render_state().unwrap();
+				let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
+					image.width() as i32,
+					image.height() as i32,
+					image.as_bytes(),
+					mip.format(),
+					&render_state.device,
+					&render_state.queue,
+				) else {
+					self.error = Some(String::from("Could not encode texture"));
+					return;
+				};
+
+				let mut tex = kkdlib::txp::Texture::new();
+				tex.set_has_cube_map(false);
+				tex.set_array_size(1);
+				tex.set_mipmaps_count(1);
+				tex.add_mipmap(&mipmap);
+				texture.texture = tex;
+				texture.texture_updated = true;
+			}
 		}
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);
