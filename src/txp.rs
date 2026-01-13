@@ -583,7 +583,7 @@ impl TreeNode for TextureNode {
 						key,
 						physical_key: _,
 						pressed: _,
-						repeat: _,
+						repeat: false,
 						modifiers,
 					} => *key == egui::Key::V && modifiers.command_only(),
 					_ => false,

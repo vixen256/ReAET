@@ -1308,7 +1308,7 @@ impl eframe::App for App {
 								key,
 								physical_key: _,
 								pressed: _,
-								repeat: _,
+								repeat: false,
 								modifiers,
 							} => {
 								*key == egui::Key::V
@@ -1317,13 +1317,13 @@ impl eframe::App for App {
 							_ => false,
 						}) && let Some(copied_layer) = &self.copied_layer
 						{
-							*selected.try_lock().unwrap() = copied_layer.clone();
+							*selected.try_lock().unwrap() = copied_layer.deep_clone();
 						} else if input.events.iter().any(|e| match e {
 							egui::Event::Key {
 								key,
 								physical_key: _,
 								pressed: _,
-								repeat: _,
+								repeat: false,
 								modifiers,
 							} => {
 								*key == egui::Key::V
@@ -1336,7 +1336,8 @@ impl eframe::App for App {
 							&& let aet::AetItemNode::Comp(comp) =
 								&mut selected.try_lock().unwrap().item
 						{
-							comp.layers.push(Rc::new(Mutex::new(copied_layer.clone())));
+							comp.layers
+								.push(Rc::new(Mutex::new(copied_layer.deep_clone())));
 						}
 					}
 				}
@@ -1890,12 +1891,11 @@ impl eframe::App for App {
 			.show(ctx, |ui| {
 				if let Some(scene) = self.get_active_scene() {
 					ui.horizontal(|ui| {
-						if ui.ctx().memory(|memory| memory.focused().is_none()) {
-							if ui.input_mut(|input| {
+						if ui.ctx().memory(|memory| memory.focused().is_none())
+							&& ui.input_mut(|input| {
 								input.consume_key(egui::Modifiers::NONE, egui::Key::Space)
 							}) {
-								scene.playing = !scene.playing;
-							}
+							scene.playing = !scene.playing;
 						}
 
 						static WIDTH: OnceLock<f32> = OnceLock::new();

@@ -921,7 +921,7 @@ impl AetCompNode {
 						};
 
 						let sprs = spr_set.sprites_node.children.try_lock().unwrap();
-						let Some(sprite) = sprs.iter().nth(index as usize) else {
+						let Some(sprite) = sprs.get(index as usize) else {
 							continue;
 						};
 
@@ -1468,7 +1468,7 @@ impl AetCompNode {
 				let mut layer = layer.try_lock().unwrap();
 				iter.next(
 					ui,
-					ui.make_persistent_id(egui::Id::new(&path).with(i)),
+					ui.make_persistent_id(egui::Id::new(path).with(i)),
 					i,
 					true,
 					|ui, item_handle| {
@@ -2275,18 +2275,18 @@ impl TreeNode for AetLayerNode {
 	}
 
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		if let AetItemNode::Comp(comp) = &mut self.item {
-			if ui.button("Add").clicked() {
-				let mut layer = Self::create_with_item(AetItemNode::None);
-				layer.sprites = self.sprites.clone();
-				layer.flags = aet::LayerFlagsBuilder::new()
-					.with_video_active(true)
-					.with_audio_active(true)
-					.build();
-				layer.quality = aet::LayerQuality::Best;
-				comp.layers.push(Rc::new(Mutex::new(layer)));
-			}
-		};
+		if let AetItemNode::Comp(comp) = &mut self.item
+			&& ui.button("Add").clicked()
+		{
+			let mut layer = Self::create_with_item(AetItemNode::None);
+			layer.sprites = self.sprites.clone();
+			layer.flags = aet::LayerFlagsBuilder::new()
+				.with_video_active(true)
+				.with_audio_active(true)
+				.build();
+			layer.quality = aet::LayerQuality::Best;
+			comp.layers.push(Rc::new(Mutex::new(layer)));
+		}
 
 		if ui.button("Duplicate").clicked() {
 			self.want_duplicate = true;
