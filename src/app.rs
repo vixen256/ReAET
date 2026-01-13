@@ -1302,7 +1302,7 @@ impl eframe::App for App {
 					if self.selected.len() >= 3 && self.selected[0] == 0 {
 						let selected = get_selected_layer(aet_set, &self.selected);
 						if input.events.iter().any(|e| matches!(e, egui::Event::Copy)) {
-							self.copied_layer = Some(selected.try_lock().unwrap().deep_clone());
+							self.copied_layer = Some(selected.try_lock().unwrap().clone());
 						} else if input.events.iter().any(|e| match e {
 							egui::Event::Key {
 								key,

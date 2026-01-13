@@ -2805,18 +2805,24 @@ impl AetLayerNode {
 			bounds[1] = max;
 		}
 
-		let mut rect = ui
-			.allocate_space(ui.available_size())
-			.1
-			.shrink(ui.text_style_height(&egui::TextStyle::Body));
+		let mut rect = egui::Rect {
+			min: ui.cursor().min,
+			max: egui::Pos2 {
+				x: ui.cursor().max.x,
+				y: ui.cursor().min.y + ui.available_height(),
+			},
+		}
+		.shrink(ui.text_style_height(&egui::TextStyle::Body));
 
-		if rect.height() < 25.0 + bottom_panel.response.rect.height() {
+		if rect.max.y >= bottom_panel.response.rect.min.y || rect.height().is_sign_negative() {
 			rect = ui
 				.allocate_space(egui::vec2(
-					100.0,
-					25.0 + bottom_panel.response.rect.height(),
+					ui.available_width(),
+					100.0 + bottom_panel.response.rect.height(),
 				))
-				.1;
+				.1
+				.shrink(ui.text_style_height(&egui::TextStyle::Body));
+			rect.max.y -= bottom_panel.response.rect.height();
 		}
 
 		let line_stroke = egui::Stroke::new(1.0, egui::Color32::GRAY);

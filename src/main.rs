@@ -15,7 +15,10 @@ fn main() {
 		multisampling: 4,
 		renderer: eframe::Renderer::Wgpu,
 		wgpu_options: WgpuConfiguration {
+			present_mode: wgpu::PresentMode::AutoNoVsync,
+			desired_maximum_frame_latency: Some(1),
 			wgpu_setup: WgpuSetup::CreateNew(WgpuSetupCreateNew {
+				power_preference: wgpu::PowerPreference::HighPerformance,
 				device_descriptor: std::sync::Arc::new(|adapter| wgpu::DeviceDescriptor {
 					label: Some("egui wgpu device"),
 					required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
