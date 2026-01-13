@@ -42,7 +42,7 @@ pub trait TreeNode {
 		None
 	}
 	fn display_opts(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {}
-	fn display_ctx_menu(&mut self, _ui: &mut egui::Ui) {}
+	fn display_ctx_menu(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {}
 	fn raw_data(&self) -> Vec<u8> {
 		Vec::new()
 	}
@@ -515,7 +515,7 @@ pub fn show_node(
 			.header_response;
 
 		if node.has_context_menu() {
-			let menu = egui::Popup::context_menu(&resp).show(|ui| node.display_ctx_menu(ui));
+			let menu = egui::Popup::context_menu(&resp).show(|ui| node.display_ctx_menu(ui, frame));
 			if menu.is_some() {
 				node.selected(frame);
 				*selected = path.clone();
@@ -537,7 +537,7 @@ pub fn show_node(
 			.inner;
 
 		if node.has_context_menu() {
-			let menu = egui::Popup::context_menu(&resp).show(|ui| node.display_ctx_menu(ui));
+			let menu = egui::Popup::context_menu(&resp).show(|ui| node.display_ctx_menu(ui, frame));
 
 			if menu.is_some() {
 				node.selected(frame);

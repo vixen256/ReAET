@@ -260,7 +260,7 @@ impl TreeNode for AetSceneNode {
 		.header_response;
 
 		if self.has_context_menu() {
-			let menu = egui::Popup::context_menu(&resp).show(|ui| self.display_ctx_menu(ui));
+			let menu = egui::Popup::context_menu(&resp).show(|ui| self.display_ctx_menu(ui, frame));
 			if menu.is_some() {
 				self.selected(frame);
 				*selected = path.to_vec();
@@ -385,7 +385,7 @@ impl TreeNode for AetSceneNode {
 		true
 	}
 
-	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
+	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if ui.button("Add").clicked() {
 			let mut layer = AetLayerNode::create_with_item(AetItemNode::None);
 			layer.sprites = self
@@ -1764,7 +1764,7 @@ impl TreeNode for AetLayerNode {
 			.inner;
 
 		if self.has_context_menu() {
-			let menu = egui::Popup::context_menu(&resp).show(|ui| self.display_ctx_menu(ui));
+			let menu = egui::Popup::context_menu(&resp).show(|ui| self.display_ctx_menu(ui, frame));
 			if menu.is_some() {
 				self.selected(frame);
 				*selected = path.to_vec();
@@ -2274,7 +2274,7 @@ impl TreeNode for AetLayerNode {
 		true
 	}
 
-	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
+	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if let AetItemNode::Comp(comp) = &mut self.item {
 			if ui.button("Add").clicked() {
 				let mut layer = Self::create_with_item(AetItemNode::None);
@@ -2958,6 +2958,33 @@ impl AetLayerNode {
 			sprites: Rc::new(Mutex::new(Vec::new())),
 			selected_key: 0,
 			visible: false,
+			multi_selected: false,
+			want_deletion: false,
+			want_duplicate: false,
+		}
+	}
+
+	pub fn deep_clone(&self) -> Self {
+		Self {
+			name: self.name.clone(),
+			start_time: self.start_time.clone(),
+			end_time: self.end_time.clone(),
+			offset_time: self.offset_time.clone(),
+			time_scale: self.time_scale.clone(),
+			flags: self.flags.clone(),
+			quality: self.quality.clone(),
+			item: if let AetItemNode::Comp(comp) = &self.item {
+				AetItemNode::Comp(comp.deep_clone())
+			} else {
+				self.item.clone()
+			},
+			markers: self.markers.clone(),
+			video: self.video.clone(),
+			parent: self.parent.clone(),
+			audio: self.audio.clone(),
+			sprites: self.sprites.clone(),
+			selected_key: self.selected_key.clone(),
+			visible: self.visible.clone(),
 			multi_selected: false,
 			want_deletion: false,
 			want_duplicate: false,

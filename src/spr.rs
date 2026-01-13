@@ -528,7 +528,7 @@ impl TreeNode for SpriteInfosNode {
 		});
 	}
 
-	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
+	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if ui.button("Add").clicked() {
 			let mut info = spr::Info::new();
 			info.set_texid(0);
@@ -794,6 +794,134 @@ impl SpriteInfoNode {
 
 		self.file_picker_result = Some(rx);
 	}
+
+	fn copy(&mut self) {
+		let texture = self.texture.try_lock().unwrap();
+		let mip = texture.texture.get_mipmap(0, 0).unwrap();
+
+		let rgba = if texture.texture.is_ycbcr() {
+			texture.texture.decode_ycbcr()
+		} else {
+			mip.rgba()
+		};
+
+		let Some(rgba) = rgba else {
+			self.error = Some(String::from("Could not convert texture to RGBA"));
+			return;
+		};
+
+		let Some(image) = image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+		else {
+			self.error = Some(String::from("Could not load image"));
+			return;
+		};
+
+		arboard::Clipboard::new()
+			.unwrap()
+			.set_image(arboard::ImageData {
+				width: self.info.width() as usize,
+				height: self.info.height() as usize,
+				bytes: image::DynamicImage::ImageRgba8(image)
+					.flipv()
+					.crop(
+						self.info.px() as u32,
+						self.info.py() as u32,
+						self.info.width() as u32,
+						self.info.height() as u32,
+					)
+					.as_bytes()
+					.into(),
+			})
+			.unwrap();
+	}
+
+	fn paste(&mut self, frame: &mut eframe::Frame) {
+		let Ok(new_image) = arboard::Clipboard::new().unwrap().get_image() else {
+			self.error = Some(String::from("Could not find image data on clipboard"));
+			return;
+		};
+		if new_image.width != self.info.width() as usize
+			|| new_image.height != self.info.height() as usize
+		{
+			self.error = Some(String::from(
+				"Image on clipboard does not match current sprite size",
+			));
+			return;
+		}
+		let Some(new_image) = image::RgbaImage::from_raw(
+			new_image.width as u32,
+			new_image.height as u32,
+			new_image.bytes.to_vec(),
+		) else {
+			self.error = Some(String::from("Could not load image"));
+			return;
+		};
+
+		let mut texture = self.texture.try_lock().unwrap();
+		let mip = texture.texture.get_mipmap(0, 0).unwrap();
+		let rgba = if texture.texture.is_ycbcr() {
+			texture.texture.decode_ycbcr()
+		} else {
+			let render_state = &frame.wgpu_render_state().unwrap();
+			mip.to_rgba_gpu(&render_state.device, &render_state.queue)
+		};
+		let Some(rgba) = rgba else {
+			self.error = Some(String::from("Failed to convert current texture to RGBA"));
+			return;
+		};
+		let Some(mut image) =
+			image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
+		else {
+			self.error = Some(String::from("Could not load image"));
+			return;
+		};
+
+		if let Err(e) = image.copy_from(
+			&image::DynamicImage::ImageRgba8(new_image).flipv(),
+			self.info.px() as u32,
+			mip.height() as u32 - self.info.py() as u32 - self.info.height() as u32,
+		) {
+			self.error = Some(format!("Could not copy sprite into current image {e}"));
+			return;
+		}
+
+		if texture.texture.is_ycbcr() {
+			let render_state = &frame.wgpu_render_state().unwrap();
+			let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
+				image.width(),
+				image.height(),
+				image.as_bytes(),
+				&render_state.device,
+				&render_state.queue,
+			) else {
+				self.error = Some(String::from("Could not encode image"));
+				return;
+			};
+			texture.texture = tex;
+			texture.texture_updated = true;
+		} else {
+			let render_state = &frame.wgpu_render_state().unwrap();
+			let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
+				image.width() as i32,
+				image.height() as i32,
+				image.as_bytes(),
+				mip.format(),
+				&render_state.device,
+				&render_state.queue,
+			) else {
+				self.error = Some(String::from("Could not encode texture"));
+				return;
+			};
+
+			let mut tex = kkdlib::txp::Texture::new();
+			tex.set_has_cube_map(false);
+			tex.set_array_size(1);
+			tex.set_mipmaps_count(1);
+			tex.add_mipmap(&mipmap);
+			texture.texture = tex;
+			texture.texture_updated = true;
+		}
+	}
 }
 
 impl TreeNode for SpriteInfoNode {
@@ -805,7 +933,7 @@ impl TreeNode for SpriteInfoNode {
 		true
 	}
 
-	fn display_ctx_menu(&mut self, ui: &mut egui::Ui) {
+	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
 		if ui
 			.add(
 				egui::Button::new("Export")
@@ -824,6 +952,34 @@ impl TreeNode for SpriteInfoNode {
 			.clicked()
 		{
 			self.replace();
+		}
+
+		if ui
+			.add(
+				egui::Button::new("Copy").shortcut_text(ui.ctx().format_shortcut(
+					&egui::KeyboardShortcut {
+						modifiers: egui::Modifiers::COMMAND,
+						logical_key: egui::Key::C,
+					},
+				)),
+			)
+			.clicked()
+		{
+			self.copy();
+		}
+
+		if ui
+			.add(
+				egui::Button::new("Paste").shortcut_text(ui.ctx().format_shortcut(
+					&egui::KeyboardShortcut {
+						modifiers: egui::Modifiers::COMMAND,
+						logical_key: egui::Key::V,
+					},
+				)),
+			)
+			.clicked()
+		{
+			self.paste(frame);
 		}
 
 		if ui.button("Remove").clicked() {
@@ -864,44 +1020,7 @@ impl TreeNode for SpriteInfoNode {
 		} else if ui.memory(|mem| mem.focused().is_none())
 			&& ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy)))
 		{
-			let texture = self.texture.try_lock().unwrap();
-			let mip = texture.texture.get_mipmap(0, 0).unwrap();
-
-			let rgba = if texture.texture.is_ycbcr() {
-				texture.texture.decode_ycbcr()
-			} else {
-				mip.rgba()
-			};
-
-			let Some(rgba) = rgba else {
-				self.error = Some(String::from("Could not convert texture to RGBA"));
-				return;
-			};
-
-			let Some(image) =
-				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
-			else {
-				self.error = Some(String::from("Could not load image"));
-				return;
-			};
-
-			arboard::Clipboard::new()
-				.unwrap()
-				.set_image(arboard::ImageData {
-					width: self.info.width() as usize,
-					height: self.info.height() as usize,
-					bytes: image::DynamicImage::ImageRgba8(image)
-						.flipv()
-						.crop(
-							self.info.px() as u32,
-							self.info.py() as u32,
-							self.info.width() as u32,
-							self.info.height() as u32,
-						)
-						.as_bytes()
-						.into(),
-				})
-				.unwrap();
+			self.copy();
 		} else if ui.memory(|mem| mem.focused().is_none())
 			&& ui.input(|i| {
 				i.events.iter().any(|e| match e {
@@ -914,78 +1033,8 @@ impl TreeNode for SpriteInfoNode {
 					} => *key == egui::Key::V && modifiers.command_only(),
 					_ => false,
 				})
-			}) && let Ok(new_image) = arboard::Clipboard::new().unwrap().get_image()
-			&& new_image.width == self.info.width() as usize
-			&& new_image.height == self.info.height() as usize
-			&& let Some(new_image) = image::RgbaImage::from_raw(
-				new_image.width as u32,
-				new_image.height as u32,
-				new_image.bytes.to_vec(),
-			) {
-			let mut texture = self.texture.try_lock().unwrap();
-			let mip = texture.texture.get_mipmap(0, 0).unwrap();
-			let rgba = if texture.texture.is_ycbcr() {
-				texture.texture.decode_ycbcr()
-			} else {
-				let render_state = &frame.wgpu_render_state().unwrap();
-				mip.to_rgba_gpu(&render_state.device, &render_state.queue)
-			};
-			let Some(rgba) = rgba else {
-				self.error = Some(String::from("Failed to convert current texture to RGBA"));
-				return;
-			};
-			let Some(mut image) =
-				image::RgbaImage::from_raw(mip.width() as u32, mip.height() as u32, rgba)
-			else {
-				self.error = Some(String::from("Could not load image"));
-				return;
-			};
-
-			if let Err(e) = image.copy_from(
-				&image::DynamicImage::ImageRgba8(new_image).flipv(),
-				self.info.px() as u32,
-				mip.height() as u32 - self.info.py() as u32 - self.info.height() as u32,
-			) {
-				self.error = Some(format!("Could not copy sprite into current image {e}"));
-				return;
-			}
-
-			if texture.texture.is_ycbcr() {
-				let render_state = &frame.wgpu_render_state().unwrap();
-				let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
-					image.width(),
-					image.height(),
-					image.as_bytes(),
-					&render_state.device,
-					&render_state.queue,
-				) else {
-					self.error = Some(String::from("Could not encode image"));
-					return;
-				};
-				texture.texture = tex;
-				texture.texture_updated = true;
-			} else {
-				let render_state = &frame.wgpu_render_state().unwrap();
-				let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
-					image.width() as i32,
-					image.height() as i32,
-					image.as_bytes(),
-					mip.format(),
-					&render_state.device,
-					&render_state.queue,
-				) else {
-					self.error = Some(String::from("Could not encode texture"));
-					return;
-				};
-
-				let mut tex = kkdlib::txp::Texture::new();
-				tex.set_has_cube_map(false);
-				tex.set_array_size(1);
-				tex.set_mipmaps_count(1);
-				tex.add_mipmap(&mipmap);
-				texture.texture = tex;
-				texture.texture_updated = true;
-			}
+			}) {
+			self.paste(frame);
 		}
 
 		let height = ui.text_style_height(&egui::TextStyle::Body);
