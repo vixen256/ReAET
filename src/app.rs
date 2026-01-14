@@ -230,6 +230,7 @@ pub struct App {
 
 	undoer: LayerUndoer,
 	copied_layer: Option<aet::AetLayerNode>,
+	frametimes: VecDeque<(f64, f32)>,
 }
 
 impl App {
@@ -265,6 +266,7 @@ impl App {
 			help_modal: false,
 			undoer: LayerUndoer::new(),
 			copied_layer: None,
+			frametimes: VecDeque::new(),
 		})
 	}
 }
@@ -1195,6 +1197,12 @@ pub const REPLACE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 
 impl eframe::App for App {
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+		if let Some(cpu_usage) = frame.info().cpu_usage {
+			let (time, dt) = ctx.input(|i| (i.time, i.unstable_dt as f64));
+			self.frametimes.push_back((time - dt, cpu_usage));
+			self.frametimes.retain(|(t, _)| time - t < 1.0);
+		}
+
 		if ctx.memory(|mem| mem.focused().is_none()) {
 			ctx.input_mut(|input| {
 				for file in &input.raw.dropped_files {
@@ -1682,6 +1690,19 @@ impl eframe::App for App {
 				if ui.button("Help").clicked() {
 					self.help_modal = true;
 				}
+
+				ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+					ui.label(format!(
+						"{}fps ({:.0}μs)",
+						self.frametimes.len(),
+						self.frametimes
+							.iter()
+							.map(|(_, frametime)| *frametime)
+							.fold(0.0, |acc, frametime| acc + frametime)
+							/ self.frametimes.len() as f32
+							* 1000.0 * 1000.0
+					));
+				});
 			});
 		});
 
