@@ -1,3 +1,5 @@
+#![feature(array_windows)]
+
 pub mod aet;
 pub mod app;
 pub mod spr;
