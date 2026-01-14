@@ -109,6 +109,8 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
+          export CC="clang-21"
+          export CXX="clang-21"
           export CFLAGS="-flto=thin -O3 -march=x86-64-v3"
           export CXXFLAGS="-flto=thin -O3 -march=x86-64-v3"
 
