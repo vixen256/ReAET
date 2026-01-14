@@ -1750,7 +1750,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 [[package]]
 name = "kkdlib"
 version = "0.1.0"
-source = "git+https://github.com/vixen256/KKdLib-sys#ab304c2dfdfffd76853e848e67189abf840815cc"
+source = "git+https://github.com/vixen256/KKdLib-sys#f1f4e67ff93cb9d0e298d0c801a75874c6823beb"
 dependencies = [
  "bitfields",
  "bitflags 2.10.0",
