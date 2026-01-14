@@ -44,16 +44,17 @@ jobs:
       - name: Build
         run: |
           brew update
-          brew install nasm llvm@21 lld@21
-          export CC="$(brew --prefix llvm@21)/bin/clang"
-          export CXX="$(brew --prefix llvm@21)/bin/clang++"
-          export AR="$(brew --prefix llvm@21)/bin/llvm-ar"
+          brew install nasm llvm@20 lld@20
+          export CC="$(brew --prefix llvm@20)/bin/clang"
+          export CXX="$(brew --prefix llvm@20)/bin/clang++"
+          export AR="$(brew --prefix llvm@20)/bin/llvm-ar"
           export CFLAGS="-flto=thin -O3"
+          export CXXFLAGS="-flto=thin -O3"
 
-          rustup toolchain install nightly
-          rustup override set nightly
+          rustup toolchain install nightly-2025-08-01
+          rustup override set nightly-2025-08-01
 
-          export RUSTFLAGS="-Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=$PWD/macos-linker.sh -Clink-arg=-fuse-ld=$(brew --prefix lld@21)/bin/ld64.lld -Zthreads=8"
+          export RUSTFLAGS="-Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=$PWD/macos-linker.sh -Clink-arg=-fuse-ld=$(brew --prefix lld@20)/bin/ld64.lld -Zthreads=8"
           cargo build --release
 
       - uses: actions/upload-artifact@v6
@@ -73,16 +74,17 @@ jobs:
       - name: Build
         run: |
           brew update
-          brew install nasm llvm@21 lld@21
-          export CC="$(brew --prefix llvm@21)/bin/clang"
-          export CXX="$(brew --prefix llvm@21)/bin/clang++"
-          export AR="$(brew --prefix llvm@21)/bin/llvm-ar"
+          brew install nasm llvm@20 lld@20
+          export CC="$(brew --prefix llvm@20)/bin/clang"
+          export CXX="$(brew --prefix llvm@20)/bin/clang++"
+          export AR="$(brew --prefix llvm@20)/bin/llvm-ar"
           export CFLAGS="-flto=thin -O3"
+          export CXXFLAGS="-flto=thin -O3"
 
-          rustup toolchain install nightly
-          rustup override set nightly
+          rustup toolchain install nightly-2025-08-01
+          rustup override set nightly-2025-08-01
 
-          export RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=$PWD/macos-linker.sh -Clink-arg=-fuse-ld=$(brew --prefix lld@21)/bin/ld64.lld -Zthreads=8"
+          export RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=$PWD/macos-linker.sh -Clink-arg=-fuse-ld=$(brew --prefix lld@20)/bin/ld64.lld -Zthreads=8"
           cargo build --release
 
       - uses: actions/upload-artifact@v6
