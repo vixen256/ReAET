@@ -8,11 +8,10 @@ use egui_material_icons::icons::*;
 use egui_plot::PlotItem;
 use glam::{Mat4, Vec4};
 use kkdlib::*;
-use regex::Regex;
+use parking_lot::*;
 use std::collections::*;
 use std::ops::*;
 use std::rc::Rc;
-use std::sync::*;
 use transform_gizmo_egui::prelude::*;
 
 #[derive(Clone, PartialEq)]
@@ -125,10 +124,6 @@ impl TreeNode for AetSetNode {
 }
 
 impl AetSetNode {
-	pub fn name_pattern() -> Regex {
-		Regex::new(r"(^aet_.*\.bin)|(.aec)$").unwrap()
-	}
-
 	pub fn read(name: &str, data: &[u8]) -> Self {
 		let set = aet::Set::from_buf(data, name.ends_with("aec"));
 
@@ -2451,7 +2446,7 @@ impl AetLayerNode {
 				});
 			});
 
-		let curve_size = OnceLock::new();
+		let curve_size = std::sync::OnceLock::new();
 
 		let bottom_panel = egui::TopBottomPanel::bottom("CurveSelector")
 			.resizable(true)
@@ -2462,7 +2457,7 @@ impl AetLayerNode {
 						ui: &mut egui::Ui,
 						resp: &egui::Response,
 						curve: &aet::FCurve,
-						curve_size: &OnceLock<(f32, f32)>,
+						curve_size: &std::sync::OnceLock<(f32, f32)>,
 					) {
 						let (start, end) = curve_size.get_or_init(|| {
 							(

@@ -7,10 +7,9 @@ use eframe::egui_wgpu;
 use eframe::egui_wgpu::wgpu;
 use image::{EncodableLayout, GenericImage};
 use kkdlib::spr;
+use parking_lot::*;
 use pollster::FutureExt;
-use regex::Regex;
 use std::rc::Rc;
-use std::sync::*;
 use wgpu::util::DeviceExt;
 
 pub struct SpriteSetNode {
@@ -155,10 +154,6 @@ impl TreeNode for SpriteSetNode {
 }
 
 impl SpriteSetNode {
-	pub fn name_pattern() -> Regex {
-		Regex::new(r"(^spr_.*\.bin)|(\.spr)$").unwrap()
-	}
-
 	pub fn read(name: &str, data: &[u8]) -> Self {
 		let set = spr::Set::from_buf(data, name.ends_with("spr"));
 		let textures_node = TextureSetNode::from_sprset(&set);
@@ -187,7 +182,7 @@ impl SpriteSetNode {
 		for (i, sprite) in self
 			.sprites_node
 			.children
-			.lock()
+			.try_lock()
 			.unwrap()
 			.iter_mut()
 			.enumerate()
@@ -542,7 +537,7 @@ impl TreeNode for SpriteInfosNode {
 			let len = self.children.try_lock().unwrap().len();
 
 			self.children
-				.lock()
+				.try_lock()
 				.unwrap()
 				.push(Rc::new(Mutex::new(SpriteInfoNode {
 					name: format!("Sprite {}", len),

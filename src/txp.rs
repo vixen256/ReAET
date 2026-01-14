@@ -7,10 +7,9 @@ use eframe::egui_wgpu::wgpu;
 use eframe::egui_wgpu::wgpu::util::DeviceExt;
 use image::EncodableLayout;
 use kkdlib::{spr, txp};
+use parking_lot::*;
 use pollster::FutureExt;
-use regex::Regex;
 use std::rc::Rc;
-use std::sync::*;
 
 pub struct TextureSetNode {
 	pub big_endian: bool,
@@ -139,10 +138,6 @@ impl TreeNode for TextureSetNode {
 }
 
 impl TextureSetNode {
-	pub fn name_pattern() -> Regex {
-		Regex::new(r"(_tex\.bin$)|(\.txd$)").unwrap()
-	}
-
 	pub fn from_sprset(set: &spr::Set) -> Self {
 		Self {
 			big_endian: set.big_endian(),

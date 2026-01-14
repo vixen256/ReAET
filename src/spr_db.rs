@@ -2,9 +2,8 @@ use crate::app::TreeNode;
 use eframe::egui;
 use eframe::egui::Widget;
 use kkdlib::database::sprite::*;
-use regex::Regex;
+use parking_lot::*;
 use std::rc::Rc;
-use std::sync::Mutex;
 
 pub struct SprDbNode {
 	pub filename: String,
@@ -98,10 +97,6 @@ impl TreeNode for SprDbNode {
 }
 
 impl SprDbNode {
-	pub fn name_pattern() -> Regex {
-		Regex::new(r"(spr_db.bin)|(\.spi)$").unwrap()
-	}
-
 	pub fn read(filename: &str, data: &[u8]) -> Self {
 		let spr_db = file::Database::from_buf(data, filename.ends_with("spi"));
 

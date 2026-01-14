@@ -2,12 +2,11 @@ use crate::*;
 use eframe::egui;
 use eframe::egui::NumExt;
 use egui_material_icons::icons::*;
+use parking_lot::*;
 use pollster::FutureExt;
-use regex::Regex;
 use std::collections::*;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::*;
 use transform_gizmo_egui::prelude::*;
 
 pub trait TreeNode {
@@ -48,11 +47,6 @@ pub trait TreeNode {
 		Vec::new()
 	}
 }
-
-static FARC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.farc$").unwrap());
-static SPRSET: LazyLock<Regex> = LazyLock::new(spr::SpriteSetNode::name_pattern);
-static AETSET: LazyLock<Regex> = LazyLock::new(aet::AetSetNode::name_pattern);
-static SPRDB: LazyLock<Regex> = LazyLock::new(spr_db::SprDbNode::name_pattern);
 
 // Based on egui::util::Undoer
 pub struct LayerUndoer {
@@ -663,8 +657,13 @@ impl App {
 			.unwrap_or_default()
 			.to_str()
 			.unwrap_or_default();
+		let ext = path
+			.extension()
+			.unwrap_or_default()
+			.to_str()
+			.unwrap_or_default();
 
-		if AETSET.is_match(name) {
+		if (name.starts_with("aet_") && ext == "bin") || ext == "aec" {
 			let aet_set = aet::AetSetNode::read(name, data);
 			if aet_set.modern {
 				self.modern_writing_modal = true;
@@ -674,7 +673,7 @@ impl App {
 			self.spr_db = None;
 			self.sprite_set = None;
 			self.undoer = LayerUndoer::new();
-		} else if SPRSET.is_match(name) {
+		} else if (name.starts_with("spr") && ext == "bin") || ext == "spr" {
 			let spr_set = spr::SpriteSetNode::read(name, data);
 			if spr_set.modern {
 				self.modern_writing_modal = true;
@@ -691,12 +690,12 @@ impl App {
 
 			self.sprite_set = Some(spr_set);
 			self.sprite_set_filepath = Some(path.clone());
-		} else if FARC.is_match(name) {
+		} else if ext == "farc" {
 			let farc = kkdlib::farc::Farc::from_buf(data, true);
 			let mut spr_set_farc = false;
 			let mut aet_set_farc = false;
 			for file in farc.files() {
-				if SPRSET.is_match(&file.name()) {
+				if (name.starts_with("spr") && ext == "bin") || ext == "spr" {
 					let spr_set =
 						spr::SpriteSetNode::read(&file.name(), file.data().unwrap_or_default());
 					if spr_set.modern {
@@ -715,7 +714,7 @@ impl App {
 					self.sprite_set = Some(spr_set);
 					self.sprite_set_filepath = Some(path.clone());
 					spr_set_farc = true;
-				} else if AETSET.is_match(&file.name()) {
+				} else if (name.starts_with("aet_") && ext == "bin") || ext == "aec" {
 					let aet_set =
 						aet::AetSetNode::read(&file.name(), file.data().unwrap_or_default());
 					if aet_set.modern {
@@ -727,7 +726,7 @@ impl App {
 					self.sprite_set = None;
 					self.undoer = LayerUndoer::new();
 					aet_set_farc = true;
-				} else if SPRDB.is_match(&file.name()) {
+				} else if name.ends_with("spr_db.bin") || ext == "spi" {
 					self.spr_db = Some(spr_db::SprDbNode::read(
 						&file.name(),
 						file.data().unwrap_or_default(),
@@ -741,7 +740,7 @@ impl App {
 			} else if aet_set_farc {
 				self.aet_set_farc = Some(farc);
 			}
-		} else if SPRDB.is_match(name) {
+		} else if name.ends_with("spr_db.bin") || ext == "spi" {
 			self.spr_db = Some(spr_db::SprDbNode::read(name, data));
 			self.spr_db_filepath = Some(path.clone());
 		}
@@ -757,7 +756,7 @@ impl App {
 						continue;
 					};
 					let name = file.file_name().to_string_lossy().to_string();
-					if SPRDB.is_match(&name)
+					if (name.ends_with("spr_db.bin") || ext == "spi")
 						&& let Ok(data) = std::fs::read(file.path())
 					{
 						self.spr_db = Some(spr_db::SprDbNode::read(&name, &data));
@@ -1196,7 +1195,7 @@ impl eframe::App for App {
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 		if let Some(cpu_usage) = frame.info().cpu_usage {
 			let (time, dt) = ctx.input(|i| (i.time, i.unstable_dt as f64));
-			self.frametimes.push_back((time - dt, cpu_usage));
+			self.frametimes.push_back((time - dt, cpu_usage * 1000.0));
 			self.frametimes.retain(|(t, _)| time - t < 1.0);
 		}
 
@@ -1659,14 +1658,12 @@ impl eframe::App for App {
 
 				ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
 					ui.label(format!(
-						"{}fps ({:.0}μs)",
-						self.frametimes.len(),
+						"{:.2}ms",
 						self.frametimes
 							.iter()
 							.map(|(_, frametime)| *frametime)
 							.fold(0.0, |acc, frametime| acc + frametime)
 							/ self.frametimes.len() as f32
-							* 1000.0 * 1000.0
 					));
 				});
 			});
@@ -1885,7 +1882,7 @@ impl eframe::App for App {
 							scene.playing = !scene.playing;
 						}
 
-						static WIDTH: OnceLock<f32> = OnceLock::new();
+						static WIDTH: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
 						let w = WIDTH.get_or_init(|| {
 							ui.scope_builder(
 								egui::UiBuilder::new().sizing_pass().invisible(),

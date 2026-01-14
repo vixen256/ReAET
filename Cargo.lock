@@ -16,8 +16,8 @@ dependencies = [
  "glam",
  "image",
  "kkdlib",
+ "parking_lot",
  "pollster",
- "regex",
  "rfd",
  "transform-gizmo-egui",
  "wgpu",
@@ -56,15 +56,6 @@ dependencies = [
  "once_cell",
  "version_check",
  "zerocopy",
-]
-
-[[package]]
-name = "aho-corasick"
-version = "1.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
-dependencies = [
- "memchr",
 ]
 
 [[package]]
@@ -1750,7 +1741,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 [[package]]
 name = "kkdlib"
 version = "0.1.0"
-source = "git+https://github.com/vixen256/KKdLib-sys#3585d711619bff820e0286c9bc7d7ef05bf1f88d"
+source = "git+https://github.com/vixen256/KKdLib-sys#1a9cdf3d5d74644b39bf346b93888cda0a89d01c"
 dependencies = [
  "bitfields",
  "bitflags 2.10.0",
@@ -1758,6 +1749,7 @@ dependencies = [
  "cc",
  "image",
  "libdeflate-sys",
+ "parking_lot",
  "wgpu",
 ]
 
@@ -2825,35 +2817,6 @@ checksum = "49f3fe0889e69e2ae9e41f4d6c4c0181701d00e4697b356fb1f74173a5e0ee27"
 dependencies = [
  "bitflags 2.10.0",
 ]
-
-[[package]]
-name = "regex"
-version = "1.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843bc0191f75f3e22651ae5f1e72939ab2f72a4bc30fa80a066bd66edefc24d4"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
-]
-
-[[package]]
-name = "regex-automata"
-version = "0.4.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5276caf25ac86c8d810222b3dbb938e512c55c6831a10f3e6ed1c93b84041f1c"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-syntax",
-]
-
-[[package]]
-name = "regex-syntax"
-version = "0.8.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "renderdoc-sys"
