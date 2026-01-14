@@ -322,6 +322,7 @@ impl SpriteSetNode {
 				kkdlib::txp::Format::BC4 => wgpu::TextureFormat::Bc4RSnorm,
 				kkdlib::txp::Format::BC5 => wgpu::TextureFormat::Bc5RgUnorm,
 				kkdlib::txp::Format::BC7 => wgpu::TextureFormat::Bc7RgbaUnorm,
+				#[cfg(feature = "bc6h")]
 				kkdlib::txp::Format::BC6H => wgpu::TextureFormat::Bc6hRgbUfloat,
 			};
 
@@ -697,11 +698,20 @@ impl SpriteInfoNode {
 
 	fn export(&mut self) {
 		async {
-			let Some(file) = rfd::AsyncFileDialog::new()
-				.add_filter(
+			let (filter_name, filter) = if cfg!(feature = "bc6h") {
+				(
 					"Images (.avif, .bmp, .jpg, .png, .webp)",
-					&["avif", "bmp", "jpg", "png", "webp"],
+					vec!["avif", "bmp", "jpg", "jpeg", "png", "webp"],
 				)
+			} else {
+				(
+					"Images (.bmp, .jpg, .png, .webp)",
+					vec!["bmp", "jpg", "jpeg", "png", "webp"],
+				)
+			};
+
+			let Some(file) = rfd::AsyncFileDialog::new()
+				.add_filter(filter_name, &filter)
 				.set_file_name(format!("{}.png", self.name))
 				.save_file()
 				.await
@@ -760,11 +770,20 @@ impl SpriteInfoNode {
 
 	fn replace(&mut self, frame: &mut eframe::Frame) {
 		async {
-			let Some(file) = rfd::AsyncFileDialog::new()
-				.add_filter(
+			let (filter_name, filter) = if cfg!(feature = "bc6h") {
+				(
 					"Images (.avif, .bmp, .jpg, .png, .webp)",
-					&["avif", "bmp", "jpg", "png", "webp"],
+					vec!["avif", "bmp", "jpg", "jpeg", "png", "webp"],
 				)
+			} else {
+				(
+					"Images (.bmp, .jpg, .png, .webp)",
+					vec!["bmp", "jpg", "jpeg", "png", "webp"],
+				)
+			};
+
+			let Some(file) = rfd::AsyncFileDialog::new()
+				.add_filter(filter_name, &filter)
 				.set_file_name(&self.name)
 				.pick_file()
 				.await

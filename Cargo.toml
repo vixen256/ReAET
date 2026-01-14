@@ -1,3 +1,5 @@
+cargo-features = ["panic-immediate-abort"]
+
 [package]
 name = "ReAET"
 version = "0.1.0"
@@ -12,7 +14,7 @@ egui_extras = { version = "0.33", default-features = false }
 egui_material_icons = "0.5"
 egui_plot = "0.34"
 glam = { version = "0.30", features = ["bytemuck", "fast-math", "core-simd"] }
-image = { version = "0.25", default-features = false, features = ["avif", "nasm", "bmp", "jpeg", "png", "rayon", "webp"] }
+image = { version = "0.25", default-features = false, features = ["bmp", "jpeg", "png", "rayon", "webp"] }
 kkdlib = { git = "https://github.com/vixen256/KKdLib-sys" }
 pollster = "0.4"
 regex = "1"
@@ -20,10 +22,13 @@ rfd = { version = "0.17", default-features = false, features = ["gtk3", "pollste
 transform-gizmo-egui = "0.8"
 wgpu = { version = "27.0", default-features = false, features = ["gles", "metal", "parking_lot", "std", "vulkan"] }
 
+[features]
+bc6h = ["kkdlib/bc6h", "image/avif", "image/nasm"]
+
 [profile.dev.package."*"]
 opt-level = 1
 
 [profile.release]
 codegen-units = 1
 strip = true
-panic = "abort"
+panic = "immediate-abort"

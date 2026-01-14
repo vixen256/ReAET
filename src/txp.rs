@@ -283,11 +283,20 @@ impl TextureNode {
 
 	fn export(&mut self) {
 		async {
-			let Some(file) = rfd::AsyncFileDialog::new()
-				.add_filter(
+			let (filter_name, filter) = if cfg!(feature = "bc6h") {
+				(
 					"Images (.avif, .bmp, .jpg, .png, .webp)",
-					&["avif", "bmp", "jpg", "jpeg", "png", "webp"],
+					vec!["avif", "bmp", "jpg", "jpeg", "png", "webp"],
 				)
+			} else {
+				(
+					"Images (.bmp, .jpg, .png, .webp)",
+					vec!["bmp", "jpg", "jpeg", "png", "webp"],
+				)
+			};
+
+			let Some(file) = rfd::AsyncFileDialog::new()
+				.add_filter(filter_name, &filter)
 				.set_file_name(format!("{}.png", self.name))
 				.save_file()
 				.await
@@ -338,11 +347,20 @@ impl TextureNode {
 
 	fn replace(&mut self, frame: &mut eframe::Frame) {
 		async {
-			let Some(file) = rfd::AsyncFileDialog::new()
-				.add_filter(
+			let (filter_name, filter) = if cfg!(feature = "bc6h") {
+				(
 					"Images (.avif, .bmp, .jpg, .png, .webp)",
-					&["avif", "bmp", "jpg", "jpeg", "png", "webp"],
+					vec!["avif", "bmp", "jpg", "jpeg", "png", "webp"],
 				)
+			} else {
+				(
+					"Images (.bmp, .jpg, .png, .webp)",
+					vec!["bmp", "jpg", "jpeg", "png", "webp"],
+				)
+			};
+
+			let Some(file) = rfd::AsyncFileDialog::new()
+				.add_filter(filter_name, &filter)
 				.set_file_name(&self.name)
 				.pick_file()
 				.await
@@ -673,6 +691,7 @@ impl TreeNode for TextureNode {
 								ui.selectable_value(&mut format, txp::Format::L8 as u32, "L8");
 								ui.selectable_value(&mut format, txp::Format::L8A8 as u32, "L8A8");
 								ui.selectable_value(&mut format, txp::Format::BC7 as u32, "BC7");
+								#[cfg(feature = "bc6h")]
 								ui.selectable_value(&mut format, txp::Format::BC6H as u32, "BC6H");
 							});
 

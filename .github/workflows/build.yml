@@ -23,9 +23,10 @@ jobs:
 
           rustup toolchain install nightly
           rustup override set nightly
+          rustup component add rust-src
 
           set RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Ctarget-feature=+crt-static -Clinker-plugin-lto -Zthreads=8"
-          cargo build --release --target x86_64-pc-windows-msvc
+          cargo build --release -Zbuild-std --target x86_64-pc-windows-msvc
 
       - uses: actions/upload-artifact@v6
         with:
@@ -53,9 +54,10 @@ jobs:
 
           rustup toolchain install nightly-2025-08-01
           rustup override set nightly-2025-08-01
+          rustup component add rust-src
 
           export RUSTFLAGS="-Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=$PWD/macos-linker.sh -Clink-arg=-fuse-ld=$(brew --prefix lld@20)/bin/ld64.lld -Zthreads=8"
-          cargo build --release
+          cargo build --release -Zbuild-std
 
       - uses: actions/upload-artifact@v6
         with:
@@ -83,9 +85,10 @@ jobs:
 
           rustup toolchain install nightly-2025-08-01
           rustup override set nightly-2025-08-01
+          rustup component add rust-src
 
           export RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=$PWD/macos-linker.sh -Clink-arg=-fuse-ld=$(brew --prefix lld@20)/bin/ld64.lld -Zthreads=8"
-          cargo build --release
+          cargo build --release -Zbuild-std
 
       - uses: actions/upload-artifact@v6
         with:
@@ -112,10 +115,11 @@ jobs:
 
           rustup toolchain install nightly
           rustup override set nightly
+          rustup component add rust-src
 
           export CFLAGS="-flto=thin -O3"
           export RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Clinker-plugin-lto -Clinker=clang-21 -Clink-arg=-fuse-ld=lld -Zthreads=8"
-          cargo build --release
+          cargo build --release -Zbuild-std
 
       - uses: actions/upload-artifact@v6
         with:
