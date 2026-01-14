@@ -2,6 +2,7 @@ use crate::*;
 use eframe::egui;
 use eframe::egui::NumExt;
 use egui_material_icons::icons::*;
+use pollster::FutureExt;
 use regex::Regex;
 use std::collections::*;
 use std::path::PathBuf;
@@ -223,7 +224,6 @@ pub struct App {
 	spr_db_filepath: Option<PathBuf>,
 	selected: Vec<usize>,
 	multi_select: Vec<Rc<Mutex<aet::AetLayerNode>>>,
-	file_picker_result: Option<mpsc::Receiver<Option<(std::path::PathBuf, Vec<u8>)>>>,
 
 	modern_writing_modal: bool,
 	help_modal: bool,
@@ -261,7 +261,6 @@ impl App {
 			spr_db_filepath: None,
 			selected: Vec::new(),
 			multi_select: Vec::new(),
-			file_picker_result: None,
 			modern_writing_modal: false,
 			help_modal: false,
 			undoer: LayerUndoer::new(),
@@ -962,7 +961,7 @@ impl App {
 	}
 
 	// Native only
-	fn save_files_to(&self) {
+	fn save_files_to(&mut self) {
 		let aet_set = if let Some(aet_set) = &self.aet_set {
 			if let Some(farc) = &self.aet_set_farc
 				&& let Some(path) = &self.aet_set_filepath
@@ -1032,28 +1031,26 @@ impl App {
 			None
 		};
 
-		std::thread::spawn(move || {
-			tokio::runtime::Builder::new_current_thread()
-				.enable_io()
-				.build()
-				.unwrap()
-				.block_on(async {
-					let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await else {
-						return;
-					};
+		async {
+			let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await else {
+				return;
+			};
 
-					let path = folder.path();
-					if let Some((aet_set, name)) = aet_set {
-						std::fs::write(path.join(name), aet_set).unwrap();
-					}
-					if let Some((sprite_set, name)) = sprite_set {
-						std::fs::write(path.join(name), sprite_set).unwrap();
-					}
-					if let Some((spr_db, name)) = spr_db {
-						std::fs::write(path.join(name), spr_db).unwrap();
-					}
-				});
-		});
+			let path = folder.path();
+			if let Some((aet_set, name)) = aet_set {
+				self.aet_set_filepath = Some(path.join(&name));
+				std::fs::write(path.join(name), aet_set).unwrap();
+			}
+			if let Some((sprite_set, name)) = sprite_set {
+				self.sprite_set_filepath = Some(path.join(&name));
+				std::fs::write(path.join(name), sprite_set).unwrap();
+			}
+			if let Some((spr_db, name)) = spr_db {
+				self.spr_db_filepath = Some(path.join(&name));
+				std::fs::write(path.join(name), spr_db).unwrap();
+			}
+		}
+		.block_on();
 	}
 }
 
@@ -1214,30 +1211,19 @@ impl eframe::App for App {
 				}
 
 				if input.consume_shortcut(&OPEN_SHORTCUT) {
-					let (tx, rx) = mpsc::channel();
-					std::thread::spawn(move || {
-						tokio::runtime::Builder::new_current_thread()
-							.enable_io()
-							.build()
-							.unwrap()
-							.block_on(async {
-								let Some(file) = rfd::AsyncFileDialog::new()
-									.add_filter("DIVA", &["farc", "bin"])
-									.pick_file()
-									.await
-								else {
-									tx.send(None).unwrap();
-									return;
-								};
+					async {
+						let Some(file) = rfd::AsyncFileDialog::new()
+							.add_filter("DIVA", &["farc", "bin"])
+							.pick_file()
+							.await
+						else {
+							return;
+						};
 
-								let path = file.path();
-								let data = file.read().await;
-								tx.send(Some((path.to_path_buf(), data))).unwrap();
-							});
-					});
-
-					self.file_picker_result = Some(rx);
-					self.selected = Vec::new();
+						self.selected = Vec::new();
+						self.set_file(frame, &file.path().to_path_buf(), &file.read().await);
+					}
+					.block_on();
 				}
 
 				if input.consume_shortcut(&SAVE_TO_SHORTCUT) {
@@ -1538,15 +1524,6 @@ impl eframe::App for App {
 			}
 		}
 
-		if let Some(rx) = &mut self.file_picker_result
-			&& let Ok(res) = rx.try_recv()
-		{
-			if let Some((path, data)) = res {
-				self.set_file(frame, &path, &data);
-			}
-			self.file_picker_result = None;
-		}
-
 		egui::TopBottomPanel::top("MenuBar").show(ctx, |ui| {
 			egui::MenuBar::new().ui(ui, |ui| {
 				ui.menu_button("File", |ui| {
@@ -1557,31 +1534,20 @@ impl eframe::App for App {
 						)
 						.clicked()
 					{
-						let (tx, rx) = mpsc::channel();
-						std::thread::spawn(move || {
-							tokio::runtime::Builder::new_current_thread()
-								.enable_io()
-								.build()
-								.unwrap()
-								.block_on(async {
-									let Some(file) = rfd::AsyncFileDialog::new()
-										.add_filter("DIVA", &["farc", "bin"])
-										.pick_file()
-										.await
-									else {
-										tx.send(None).unwrap();
-										return;
-									};
-
-									let path = file.path();
-									let data = file.read().await;
-									tx.send(Some((path.to_path_buf(), data))).unwrap();
-								});
-						});
-
-						self.file_picker_result = Some(rx);
-						self.selected = Vec::new();
 						ui.close();
+						async {
+							let Some(file) = rfd::AsyncFileDialog::new()
+								.add_filter("DIVA", &["farc", "bin"])
+								.pick_file()
+								.await
+							else {
+								return;
+							};
+
+							self.selected = Vec::new();
+							self.set_file(frame, &file.path().to_path_buf(), &file.read().await);
+						}
+						.block_on();
 					}
 
 					if ui
