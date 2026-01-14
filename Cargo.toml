@@ -16,7 +16,7 @@ image = { version = "0.25", default-features = false, features = ["bmp", "jpeg",
 kkdlib = { git = "https://github.com/vixen256/KKdLib-sys" }
 parking_lot = { version = "0.12", features = ["nightly", "hardware-lock-elision"] }
 pollster = "0.4"
-rfd = { version = "0.17", default-features = false, features = ["gtk3", "pollster", "wayland"] }
+rfd = "0.17"
 transform-gizmo-egui = "0.8"
 wgpu = { version = "27.0", default-features = false, features = ["gles", "metal", "parking_lot", "std", "vulkan"] }
 
@@ -27,6 +27,6 @@ bc6h = ["kkdlib/bc6h", "image/avif", "image/nasm"]
 opt-level = 1
 
 [profile.release]
-codegen-units = 1
+lto = true
 strip = true
 panic = "abort"

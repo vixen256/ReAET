@@ -17,8 +17,8 @@ jobs:
           winget install LLVM --disable-interactivity --accept-source-agreements --accept-package-agreements
           set CC=clang-cl
           set CXX=clang-cl
-          set CFLAGS="/clang:-flto=thin /clang:-O3 /clang:-fuse-ld=lld-link"
-          set CXXFLAGS="/clang:-flto=thin /clang:-O3 /clang:-fuse-ld=lld-link"
+          set CFLAGS="/clang:-flto=thin /clang:-O3 /clang:-fuse-ld=lld-link /clang:march=x86-64-v3"
+          set CXXFLAGS="/clang:-flto=thin /clang:-O3 /clang:-fuse-ld=lld-link /clang:march=x86-64-v3"
           set AR=llvm-lib
 
           rustup toolchain install nightly
@@ -57,12 +57,12 @@ jobs:
           rustup component add rust-src
 
           export RUSTFLAGS="-Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=$PWD/macos-linker.sh -Clink-arg=-fuse-ld=$(brew --prefix lld@20)/bin/ld64.lld -Zthreads=8"
-          cargo build --release -Zbuild-std=std,core,alloc,panic_abort
+          cargo build --release -Zbuild-std=std,core,alloc,panic_abort --target aarch64-apple-darwin
 
       - uses: actions/upload-artifact@v6
         with:
           name: ReAET-macos-aarch64
-          path: target/release/ReAET
+          path: target/aarch64-apple-darwin/release/ReAET
 
   build-intel-macos:
     name: Build MacOS (Intel)
@@ -80,20 +80,20 @@ jobs:
           export CC="$(brew --prefix llvm@20)/bin/clang"
           export CXX="$(brew --prefix llvm@20)/bin/clang++"
           export AR="$(brew --prefix llvm@20)/bin/llvm-ar"
-          export CFLAGS="-flto=thin -O3"
-          export CXXFLAGS="-flto=thin -O3"
+          export CFLAGS="-flto=thin -O3 -march=x86-64-v3"
+          export CXXFLAGS="-flto=thin -O3 -march=x86-64-v3"
 
           rustup toolchain install nightly-2025-08-01
           rustup override set nightly-2025-08-01
           rustup component add rust-src
 
           export RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=$PWD/macos-linker.sh -Clink-arg=-fuse-ld=$(brew --prefix lld@20)/bin/ld64.lld -Zthreads=8"
-          cargo build --release -Zbuild-std=std,core,alloc,panic_abort
+          cargo build --release -Zbuild-std=std,core,alloc,panic_abort --target x86_64-apple-darwin
 
       - uses: actions/upload-artifact@v6
         with:
           name: ReAET-macos-x86_64
-          path: target/release/ReAET
+          path: target/x86_64-apple-darwin/release/ReAET
 
   build-linux:
     name: Build Linux
@@ -109,6 +109,8 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
+          export CFLAGS="-flto=thin -O3 -march=x86-64-v3"
+          export CXXFLAGS="-flto=thin -O3 -march=x86-64-v3"
 
           sudo apt-get update
           sudo apt-get install libglib2.0-dev libatk1.0-dev libgtk-3-dev nasm clang-21 lld-21
@@ -117,11 +119,10 @@ jobs:
           rustup override set nightly
           rustup component add rust-src
 
-          export CFLAGS="-flto=thin -O3"
           export RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Clinker-plugin-lto -Clinker=clang-21 -Clink-arg=-fuse-ld=lld -Zthreads=8"
-          cargo build --release -Zbuild-std=std,core,alloc,panic_abort
+          cargo build --release -Zbuild-std=std,core,alloc,panic_abort --target x86_64-unknown-linux-gnu
 
       - uses: actions/upload-artifact@v6
         with:
           name: ReAET-linux
-          path: target/release/ReAET
+          path: target/x86_64-unknown-linux-gnu/release/ReAET
