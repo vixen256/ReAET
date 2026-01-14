@@ -26,7 +26,7 @@ jobs:
           rustup component add rust-src
 
           set RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Ctarget-feature=+crt-static -Clinker-plugin-lto -Zthreads=8"
-          cargo build --release -Zbuild-std=std,core,alloc,panic_abort --target x86_64-pc-windows-msvc
+          cargo build --release "-Zbuild-std=std,core,alloc,panic_abort" --target x86_64-pc-windows-msvc
 
       - uses: actions/upload-artifact@v6
         with:
