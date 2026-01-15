@@ -259,14 +259,11 @@ impl TextureNode {
 		async {
 			let (filter_name, filter) = if cfg!(feature = "bc6h") {
 				(
-					"Images (.avif, .bmp, .jpg, .png, .webp)",
-					vec!["avif", "bmp", "jpg", "jpeg", "png", "webp"],
+					"Images (.avif, .bmp, .png, .webp)",
+					vec!["avif", "bmp", "png", "webp"],
 				)
 			} else {
-				(
-					"Images (.bmp, .jpg, .png, .webp)",
-					vec!["bmp", "jpg", "jpeg", "png", "webp"],
-				)
+				("Images (.bmp, .png, .webp)", vec!["bmp", "png", "webp"])
 			};
 
 			let Some(file) = rfd::AsyncFileDialog::new()
@@ -323,14 +320,11 @@ impl TextureNode {
 		async {
 			let (filter_name, filter) = if cfg!(feature = "bc6h") {
 				(
-					"Images (.avif, .bmp, .jpg, .png, .webp)",
-					vec!["avif", "bmp", "jpg", "jpeg", "png", "webp"],
+					"Images (.avif, .bmp, .png, .webp)",
+					vec!["avif", "bmp", "png", "webp"],
 				)
 			} else {
-				(
-					"Images (.bmp, .jpg, .png, .webp)",
-					vec!["bmp", "jpg", "jpeg", "png", "webp"],
-				)
+				("Images (.bmp, .png, .webp)", vec!["bmp", "png", "webp"])
 			};
 
 			let Some(file) = rfd::AsyncFileDialog::new()

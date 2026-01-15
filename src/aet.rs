@@ -1996,6 +1996,7 @@ impl TreeNode for AetLayerNode {
 						drop(db_entry);
 						drop(sprite);
 
+						ui.label("");
 						egui::ComboBox::from_id_salt(format!("Source{i}ComboBox"))
 							.selected_text(&sprite_name)
 							.show_ui(ui, |ui| {
