@@ -39,47 +39,23 @@ impl TreeNode for AetSetNode {
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		let height = ui.text_style_height(&egui::TextStyle::Body);
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Name");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.name);
-					});
-				});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Name");
+			ui.text_edit_singleline(&mut self.name);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Modern");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.modern).ui(ui);
-					});
-				});
+			ui.label("Modern");
+			egui::Checkbox::without_text(&mut self.modern).ui(ui);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Big Endian");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.big_endian).ui(ui);
-					});
-				});
+			ui.label("Big Endian");
+			egui::Checkbox::without_text(&mut self.big_endian).ui(ui);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("X");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.is_x).ui(ui);
-					});
-				});
-			});
+			ui.label("X");
+			egui::Checkbox::without_text(&mut self.is_x).ui(ui);
+			ui.end_row();
+		});
 	}
 
 	fn raw_data(&self) -> Vec<u8> {
@@ -306,74 +282,35 @@ impl TreeNode for AetSceneNode {
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		let height = ui.text_style_height(&egui::TextStyle::Body);
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Name");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.name);
-					});
-				});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Name");
+			ui.text_edit_singleline(&mut self.name);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Start time");
-					});
-					row.col(|ui| {
-						crate::app::num_edit(ui, &mut self.start_time, 2);
-					});
-				});
+			ui.label("Start time");
+			crate::app::num_edit(ui, &mut self.start_time, 2);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("End time");
-					});
-					row.col(|ui| {
-						crate::app::num_edit(ui, &mut self.end_time, 2);
-					});
-				});
+			ui.label("End time");
+			crate::app::num_edit(ui, &mut self.end_time, 2);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("FPS");
-					});
-					row.col(|ui| {
-						crate::app::num_edit(ui, &mut self.fps, 0);
-					});
-				});
+			ui.label("FPS");
+			crate::app::num_edit(ui, &mut self.fps, 0);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Width");
-					});
-					row.col(|ui| {
-						crate::app::num_edit(ui, &mut self.width, 0);
-					});
-				});
+			ui.label("Width");
+			crate::app::num_edit(ui, &mut self.width, 0);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Height");
-					});
-					row.col(|ui| {
-						crate::app::num_edit(ui, &mut self.height, 0);
-					});
-				});
+			ui.label("Height");
+			crate::app::num_edit(ui, &mut self.height, 0);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Background color");
-					});
-					row.col(|ui| {
-						ui.color_edit_button_rgb(&mut self.background_color);
-					});
-				});
-			});
+			ui.label("Background color");
+			ui.color_edit_button_rgb(&mut self.background_color);
+			ui.end_row();
+		});
 	}
 
 	fn has_context_menu(&self) -> bool {
@@ -1480,9 +1417,9 @@ impl AetCompNode {
 									children,
 								);
 
-								if ui.available_width() < 10.0 {
+								if ui.available_width() < 5.0 {
 									ui.allocate_at_least(
-										egui::vec2(10.0, 0.0),
+										egui::vec2(5.0, 0.0),
 										egui::Sense::empty(),
 									);
 								}
@@ -1775,494 +1712,379 @@ impl TreeNode for AetLayerNode {
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		let height = ui.text_style_height(&egui::TextStyle::Body);
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Name");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.name);
-					});
-				});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Name");
+			ui.text_edit_singleline(&mut self.name);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Start time");
-					});
-					row.col(|ui| {
-						crate::app::num_edit(ui, &mut self.start_time, 2);
-					});
-				});
+			ui.label("Start time");
+			crate::app::num_edit(ui, &mut self.start_time, 2);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("End time");
-					});
-					row.col(|ui| {
-						crate::app::num_edit(ui, &mut self.end_time, 2);
-					});
-				});
+			ui.label("End time");
+			crate::app::num_edit(ui, &mut self.end_time, 2);
+			ui.end_row();
 
-				if let Some(parent) = &self.parent {
-					let parent = parent.try_lock().unwrap();
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("Parent");
-						});
-						row.col(|ui| {
-							ui.label(&parent.name);
-						});
+			if let Some(parent) = &self.parent {
+				let parent = parent.try_lock().unwrap();
+				ui.label("Parent");
+				ui.label(&parent.name);
+				ui.end_row();
+			}
+
+			let mut has_audio = self.audio.is_some();
+			let mut has_video = self.video.is_some();
+			let mut has_3d = self.video.as_ref().is_some_and(|video| video._3d.is_some());
+
+			ui.label("Audio");
+			if egui::Checkbox::without_text(&mut has_audio)
+				.ui(ui)
+				.changed()
+			{
+				if self.audio.is_none() {
+					self.audio = Some(aet::LayerAudio {
+						volume_l: aet::FCurve {
+							keys: vec![aet::FCurveKey {
+								frame: 0.0,
+								value: 1.0,
+								tangent: 0.0,
+							}],
+						},
+						volume_r: aet::FCurve {
+							keys: vec![aet::FCurveKey {
+								frame: 0.0,
+								value: 1.0,
+								tangent: 0.0,
+							}],
+						},
+						pan_l: aet::FCurve { keys: Vec::new() },
+						pan_r: aet::FCurve { keys: Vec::new() },
 					});
+				} else {
+					self.audio = None;
 				}
+			}
+			ui.end_row();
 
-				let mut has_audio = self.audio.is_some();
-				let mut has_video = self.video.is_some();
-				let mut has_3d = self.video.as_ref().is_some_and(|video| video._3d.is_some());
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Audio");
+			ui.label("Video");
+			if egui::Checkbox::without_text(&mut has_video)
+				.ui(ui)
+				.changed()
+			{
+				if self.video.is_none() {
+					self.video = Some(aet::LayerVideo {
+						transfer_mode: aet::TransferMode {
+							mode: aet::BlendMode::Add,
+							flag: 0,
+							matte: 0,
+						},
+						anchor_x: aet::FCurve { keys: Vec::new() },
+						anchor_y: aet::FCurve { keys: Vec::new() },
+						pos_x: aet::FCurve { keys: Vec::new() },
+						pos_y: aet::FCurve { keys: Vec::new() },
+						rot_z: aet::FCurve { keys: Vec::new() },
+						scale_x: aet::FCurve {
+							keys: vec![aet::FCurveKey {
+								frame: 0.0,
+								value: 1.0,
+								tangent: 0.0,
+							}],
+						},
+						scale_y: aet::FCurve {
+							keys: vec![aet::FCurveKey {
+								frame: 0.0,
+								value: 1.0,
+								tangent: 0.0,
+							}],
+						},
+						opacity: aet::FCurve {
+							keys: vec![aet::FCurveKey {
+								frame: 0.0,
+								value: 1.0,
+								tangent: 0.0,
+							}],
+						},
+						_3d: None,
 					});
-					row.col(|ui| {
-						if egui::Checkbox::without_text(&mut has_audio)
-							.ui(ui)
-							.changed()
+				} else {
+					self.video = None;
+				}
+			}
+			ui.end_row();
+
+			if let Some(video) = &mut self.video {
+				ui.label("3D");
+				if egui::Checkbox::without_text(&mut has_3d).ui(ui).changed() {
+					if video._3d.is_none() {
+						video._3d = Some(aet::LayerVideo3D {
+							anchor_z: aet::FCurve { keys: Vec::new() },
+							pos_z: aet::FCurve { keys: Vec::new() },
+							dir_x: aet::FCurve { keys: Vec::new() },
+							dir_y: aet::FCurve { keys: Vec::new() },
+							dir_z: aet::FCurve { keys: Vec::new() },
+							rot_x: aet::FCurve { keys: Vec::new() },
+							rot_y: aet::FCurve { keys: Vec::new() },
+							scale_z: aet::FCurve {
+								keys: vec![aet::FCurveKey {
+									frame: 0.0,
+									value: 1.0,
+									tangent: 0.0,
+								}],
+							},
+						});
+					} else {
+						video._3d = None;
+					}
+				}
+				ui.end_row();
+			}
+
+			if let Some(video) = &mut self.video {
+				ui.label("Blend mode");
+				egui::ComboBox::from_id_salt("BlendModeComboBox")
+					.selected_text(format!("{:?}", video.transfer_mode.mode))
+					.show_ui(ui, |ui| {
+						ui.selectable_value(
+							&mut video.transfer_mode.mode,
+							aet::BlendMode::Normal,
+							format!("{:?}", aet::BlendMode::Normal),
+						);
+						ui.selectable_value(
+							&mut video.transfer_mode.mode,
+							aet::BlendMode::Add,
+							format!("{:?}", aet::BlendMode::Add),
+						);
+						ui.selectable_value(
+							&mut video.transfer_mode.mode,
+							aet::BlendMode::Multiply,
+							format!("{:?}", aet::BlendMode::Multiply),
+						);
+						ui.selectable_value(
+							&mut video.transfer_mode.mode,
+							aet::BlendMode::Screen,
+							format!("{:?}", aet::BlendMode::Screen),
+						);
+						ui.selectable_value(
+							&mut video.transfer_mode.mode,
+							aet::BlendMode::Overlay,
+							format!("{:?}", aet::BlendMode::Overlay),
+						);
+					});
+				ui.end_row();
+
+				ui.label("Matte");
+				let mut is_matte = video.transfer_mode.matte != 0;
+				ui.add(egui::Checkbox::without_text(&mut is_matte));
+				video.transfer_mode.matte = if is_matte { 1 } else { 0 };
+				ui.end_row();
+			}
+
+			ui.label("Child");
+			let (item_type, label) = match &self.item {
+				AetItemNode::None => (0, "None"),
+				AetItemNode::Video(_) => (1, "Video"),
+				AetItemNode::Audio(_) => (2, "Audio"),
+				AetItemNode::Comp(_) => (3, "Composition"),
+			};
+			let mut new_item_type = item_type;
+			egui::ComboBox::from_id_salt("ChildComboBox")
+				.selected_text(label)
+				.show_ui(ui, |ui| {
+					ui.selectable_value(&mut new_item_type, 0, "None");
+					ui.selectable_value(&mut new_item_type, 1, "Video");
+					ui.selectable_value(&mut new_item_type, 2, "Audio");
+					ui.selectable_value(&mut new_item_type, 3, "Comp");
+				});
+
+			if new_item_type != item_type {
+				match new_item_type {
+					0 => self.item = AetItemNode::None,
+					1 => {
+						self.item = AetItemNode::Video(AetVideoNode {
+							color: [255, 255, 255],
+							width: 0,
+							height: 0,
+							fpf: 0.0,
+							sources: Vec::new(),
+						})
+					}
+					2 => self.item = AetItemNode::Audio(AetAudioNode { sound_index: 0 }),
+					3 => self.item = AetItemNode::Comp(AetCompNode { layers: Vec::new() }),
+					_ => unreachable!(),
+				}
+			}
+			ui.end_row();
+
+			match &mut self.item {
+				AetItemNode::None => {}
+				AetItemNode::Video(video) => {
+					ui.label("Width");
+					let mut width = video.width;
+					if crate::app::num_edit(ui, &mut width, 0).changed() {
+						if let Some(lvideo) = &mut self.video
+							&& lvideo.anchor_x.keys.len() == 1
+							&& lvideo.anchor_x.keys[0].value == video.width as f32 / 2.0
 						{
-							if self.audio.is_none() {
-								self.audio = Some(aet::LayerAudio {
-									volume_l: aet::FCurve {
-										keys: vec![aet::FCurveKey {
-											frame: 0.0,
-											value: 1.0,
-											tangent: 0.0,
-										}],
-									},
-									volume_r: aet::FCurve {
-										keys: vec![aet::FCurveKey {
-											frame: 0.0,
-											value: 1.0,
-											tangent: 0.0,
-										}],
-									},
-									pan_l: aet::FCurve { keys: Vec::new() },
-									pan_r: aet::FCurve { keys: Vec::new() },
-								});
-							} else {
-								self.audio = None;
+							lvideo.anchor_x.keys[0].value = width as f32 / 2.0;
+
+							for key in &mut lvideo.pos_x.keys {
+								key.value -= video.width as f32 / 2.0;
+								key.value += width as f32 / 2.0;
 							}
 						}
-					});
-				});
+						video.width = width;
+					}
+					ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Video");
-					});
-					row.col(|ui| {
-						if egui::Checkbox::without_text(&mut has_video)
-							.ui(ui)
-							.changed()
+					ui.label("Height");
+					let mut height = video.height;
+					if crate::app::num_edit(ui, &mut height, 0).changed() {
+						if let Some(lvideo) = &mut self.video
+							&& lvideo.anchor_y.keys.len() == 1
+							&& lvideo.anchor_y.keys[0].value == video.height as f32 / 2.0
 						{
-							if self.video.is_none() {
-								self.video = Some(aet::LayerVideo {
-									transfer_mode: aet::TransferMode {
-										mode: aet::BlendMode::Add,
-										flag: 0,
-										matte: 0,
-									},
-									anchor_x: aet::FCurve { keys: Vec::new() },
-									anchor_y: aet::FCurve { keys: Vec::new() },
-									pos_x: aet::FCurve { keys: Vec::new() },
-									pos_y: aet::FCurve { keys: Vec::new() },
-									rot_z: aet::FCurve { keys: Vec::new() },
-									scale_x: aet::FCurve {
-										keys: vec![aet::FCurveKey {
-											frame: 0.0,
-											value: 1.0,
-											tangent: 0.0,
-										}],
-									},
-									scale_y: aet::FCurve {
-										keys: vec![aet::FCurveKey {
-											frame: 0.0,
-											value: 1.0,
-											tangent: 0.0,
-										}],
-									},
-									opacity: aet::FCurve {
-										keys: vec![aet::FCurveKey {
-											frame: 0.0,
-											value: 1.0,
-											tangent: 0.0,
-										}],
-									},
-									_3d: None,
-								});
-							} else {
-								self.video = None;
+							lvideo.anchor_y.keys[0].value = height as f32 / 2.0;
+
+							for key in &mut lvideo.pos_y.keys {
+								key.value -= video.height as f32 / 2.0;
+								key.value += height as f32 / 2.0;
 							}
 						}
-					});
-				});
+						video.height = height;
+					}
+					ui.end_row();
 
-				if let Some(video) = &mut self.video {
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("3D");
-						});
-						row.col(|ui| {
-							if egui::Checkbox::without_text(&mut has_3d).ui(ui).changed() {
-								if video._3d.is_none() {
-									video._3d = Some(aet::LayerVideo3D {
-										anchor_z: aet::FCurve { keys: Vec::new() },
-										pos_z: aet::FCurve { keys: Vec::new() },
-										dir_x: aet::FCurve { keys: Vec::new() },
-										dir_y: aet::FCurve { keys: Vec::new() },
-										dir_z: aet::FCurve { keys: Vec::new() },
-										rot_x: aet::FCurve { keys: Vec::new() },
-										rot_y: aet::FCurve { keys: Vec::new() },
-										scale_z: aet::FCurve {
-											keys: vec![aet::FCurveKey {
-												frame: 0.0,
-												value: 1.0,
-												tangent: 0.0,
-											}],
-										},
-									});
-								} else {
-									video._3d = None;
-								}
-							}
-						});
-					});
-				}
+					ui.label("FPF");
+					crate::app::num_edit(ui, &mut video.fpf, 0);
+					ui.end_row();
 
-				if let Some(video) = &mut self.video {
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("Blend mode");
-						});
-						row.col(|ui| {
-							egui::ComboBox::from_id_salt("BlendModeComboBox")
-								.selected_text(format!("{:?}", video.transfer_mode.mode))
-								.show_ui(ui, |ui| {
-									ui.selectable_value(
-										&mut video.transfer_mode.mode,
-										aet::BlendMode::Normal,
-										format!("{:?}", aet::BlendMode::Normal),
-									);
-									ui.selectable_value(
-										&mut video.transfer_mode.mode,
-										aet::BlendMode::Add,
-										format!("{:?}", aet::BlendMode::Add),
-									);
-									ui.selectable_value(
-										&mut video.transfer_mode.mode,
-										aet::BlendMode::Multiply,
-										format!("{:?}", aet::BlendMode::Multiply),
-									);
-									ui.selectable_value(
-										&mut video.transfer_mode.mode,
-										aet::BlendMode::Screen,
-										format!("{:?}", aet::BlendMode::Screen),
-									);
-									ui.selectable_value(
-										&mut video.transfer_mode.mode,
-										aet::BlendMode::Overlay,
-										format!("{:?}", aet::BlendMode::Overlay),
-									);
-								});
-						});
-					});
+					ui.label("Color");
+					let mut rgb = [
+						video.color[0] as f32 / 255.0,
+						video.color[1] as f32 / 255.0,
+						video.color[2] as f32 / 255.0,
+					];
+					ui.color_edit_button_rgb(&mut rgb);
+					video.color[0] = (rgb[0] * 255.0) as u8;
+					video.color[1] = (rgb[1] * 255.0) as u8;
+					video.color[2] = (rgb[2] * 255.0) as u8;
+					ui.end_row();
 
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("Matte");
+					ui.label("Sources");
+					if ui.button(ICON_ADD).clicked() {
+						video.sources.push(AetVideoSourceNode {
+							name: String::new(),
+							id: 0,
+							sprite: self.sprites.try_lock().unwrap().first().cloned(),
 						});
-						row.col(|ui| {
-							let mut is_matte = video.transfer_mode.matte != 0;
-							ui.add(egui::Checkbox::without_text(&mut is_matte));
-							video.transfer_mode.matte = if is_matte { 1 } else { 0 };
-						});
-					});
-				}
+					}
+					ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Child");
-					});
-					row.col(|ui| {
-						let (item_type, label) = match &self.item {
-							AetItemNode::None => (0, "None"),
-							AetItemNode::Video(_) => (1, "Video"),
-							AetItemNode::Audio(_) => (2, "Audio"),
-							AetItemNode::Comp(_) => (3, "Composition"),
+					for (i, source) in video.sources.iter_mut().enumerate() {
+						let Some(sprite) = &source.sprite else {
+							continue;
 						};
-						let mut new_item_type = item_type;
-						egui::ComboBox::from_id_salt("ChildComboBox")
-							.selected_text(label)
+						let sprite = sprite.try_lock().unwrap();
+						let Some(db_entry) = &sprite.db_entry else {
+							continue;
+						};
+						let db_entry = db_entry.try_lock().unwrap();
+						source.id = db_entry.id;
+						let sprite_name = sprite.name.clone();
+						let old_selected_sprite = db_entry.id;
+						let mut selected_sprite = db_entry.id;
+						drop(db_entry);
+						drop(sprite);
+
+						egui::ComboBox::from_id_salt(format!("Source{i}ComboBox"))
+							.selected_text(&sprite_name)
 							.show_ui(ui, |ui| {
-								ui.selectable_value(&mut new_item_type, 0, "None");
-								ui.selectable_value(&mut new_item_type, 1, "Video");
-								ui.selectable_value(&mut new_item_type, 2, "Audio");
-								ui.selectable_value(&mut new_item_type, 3, "Comp");
-							});
-
-						if new_item_type != item_type {
-							match new_item_type {
-								0 => self.item = AetItemNode::None,
-								1 => {
-									self.item = AetItemNode::Video(AetVideoNode {
-										color: [255, 255, 255],
-										width: 0,
-										height: 0,
-										fpf: 0.0,
-										sources: Vec::new(),
-									})
-								}
-								2 => {
-									self.item = AetItemNode::Audio(AetAudioNode { sound_index: 0 })
-								}
-								3 => {
-									self.item =
-										AetItemNode::Comp(AetCompNode { layers: Vec::new() })
-								}
-								_ => unreachable!(),
-							}
-						}
-					});
-				});
-
-				match &mut self.item {
-					AetItemNode::None => {}
-					AetItemNode::Video(video) => {
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Width");
-							});
-							row.col(|ui| {
-								let mut width = video.width;
-								if crate::app::num_edit(ui, &mut width, 0).changed() {
-									if let Some(lvideo) = &mut self.video
-										&& lvideo.anchor_x.keys.len() == 1
-										&& lvideo.anchor_x.keys[0].value == video.width as f32 / 2.0
-									{
-										lvideo.anchor_x.keys[0].value = width as f32 / 2.0;
-
-										for key in &mut lvideo.pos_x.keys {
-											key.value -= video.width as f32 / 2.0;
-											key.value += width as f32 / 2.0;
-										}
-									}
-									video.width = width;
+								for sprite in self.sprites.try_lock().unwrap().iter() {
+									let sprite = sprite.try_lock().unwrap();
+									let Some(db_entry) = &sprite.db_entry else {
+										continue;
+									};
+									let db_entry = db_entry.try_lock().unwrap();
+									ui.selectable_value(
+										&mut selected_sprite,
+										db_entry.id,
+										&sprite.name,
+									);
 								}
 							});
-						});
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Height");
-							});
-							row.col(|ui| {
-								let mut height = video.height;
-								if crate::app::num_edit(ui, &mut height, 0).changed() {
-									if let Some(lvideo) = &mut self.video
-										&& lvideo.anchor_y.keys.len() == 1
-										&& lvideo.anchor_y.keys[0].value
-											== video.height as f32 / 2.0
-									{
-										lvideo.anchor_y.keys[0].value = height as f32 / 2.0;
+						ui.end_row();
 
-										for key in &mut lvideo.pos_y.keys {
-											key.value -= video.height as f32 / 2.0;
-											key.value += height as f32 / 2.0;
-										}
-									}
-									video.height = height;
-								}
-							});
-						});
+						if selected_sprite != old_selected_sprite {
+							source.sprite = self
+								.sprites
+								.try_lock()
+								.unwrap()
+								.iter()
+								.find(|spr| {
+									spr.try_lock().unwrap().db_entry.is_some()
+										&& spr
+											.try_lock()
+											.unwrap()
+											.db_entry
+											.as_ref()
+											.unwrap()
+											.try_lock()
+											.unwrap()
+											.id == selected_sprite
+								})
+								.cloned();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("FPF");
-							});
-							row.col(|ui| {
-								crate::app::num_edit(ui, &mut video.fpf, 0);
-							});
-						});
-
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Color");
-							});
-							row.col(|ui| {
-								let mut rgb = [
-									video.color[0] as f32 / 255.0,
-									video.color[1] as f32 / 255.0,
-									video.color[2] as f32 / 255.0,
-								];
-								ui.color_edit_button_rgb(&mut rgb);
-								video.color[0] = (rgb[0] * 255.0) as u8;
-								video.color[1] = (rgb[1] * 255.0) as u8;
-								video.color[2] = (rgb[2] * 255.0) as u8;
-							});
-						});
-
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Sources");
-							});
-							row.col(|ui| {
-								if ui.button(ICON_ADD).clicked() {
-									video.sources.push(AetVideoSourceNode {
-										name: String::new(),
-										id: 0,
-										sprite: self.sprites.try_lock().unwrap().first().cloned(),
-									});
-								}
-							});
-						});
-
-						for (i, source) in video.sources.iter_mut().enumerate() {
-							let Some(sprite) = &source.sprite else {
-								continue;
-							};
-							let sprite = sprite.try_lock().unwrap();
-							let Some(db_entry) = &sprite.db_entry else {
-								continue;
-							};
-							let db_entry = db_entry.try_lock().unwrap();
-							source.id = db_entry.id;
-							let sprite_name = sprite.name.clone();
-							let old_selected_sprite = db_entry.id;
-							let mut selected_sprite = db_entry.id;
-							drop(db_entry);
-							drop(sprite);
-
-							body.row(height, |mut row| {
-								row.col(|_| {});
-								row.col(|ui| {
-									egui::ComboBox::from_id_salt(format!("Source{i}ComboBox"))
-										.selected_text(&sprite_name)
-										.show_ui(ui, |ui| {
-											for sprite in self.sprites.try_lock().unwrap().iter() {
-												let sprite = sprite.try_lock().unwrap();
-												let Some(db_entry) = &sprite.db_entry else {
-													continue;
-												};
-												let db_entry = db_entry.try_lock().unwrap();
-												ui.selectable_value(
-													&mut selected_sprite,
-													db_entry.id,
-													&sprite.name,
-												);
-											}
-										});
-								});
-							});
-
-							if selected_sprite != old_selected_sprite {
-								source.sprite = self
-									.sprites
-									.try_lock()
-									.unwrap()
-									.iter()
-									.find(|spr| {
-										spr.try_lock().unwrap().db_entry.is_some()
-											&& spr
-												.try_lock()
-												.unwrap()
-												.db_entry
-												.as_ref()
-												.unwrap()
-												.try_lock()
-												.unwrap()
-												.id == selected_sprite
-									})
-									.cloned();
-
-								source.id = selected_sprite;
-							}
+							source.id = selected_sprite;
 						}
 					}
-					AetItemNode::Audio(audio) => {
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Sound index");
-							});
-							row.col(|ui| {
-								crate::app::num_edit(ui, &mut audio.sound_index, 0);
-							});
-						});
-					}
-					AetItemNode::Comp(_) => {}
 				}
+				AetItemNode::Audio(audio) => {
+					ui.label("Sound index");
+					crate::app::num_edit(ui, &mut audio.sound_index, 0);
+					ui.end_row();
+				}
+				AetItemNode::Comp(_) => {}
+			}
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Video active");
-					});
-					row.col(|ui| {
-						let mut video_active = self.flags.video_active();
-						if egui::Checkbox::without_text(&mut video_active)
-							.ui(ui)
-							.changed()
-						{
-							self.flags.set_video_active(video_active);
-							self.visible = video_active;
-						}
-					});
-				});
+			ui.label("Video active");
+			let mut video_active = self.flags.video_active();
+			if egui::Checkbox::without_text(&mut video_active)
+				.ui(ui)
+				.changed()
+			{
+				self.flags.set_video_active(video_active);
+				self.visible = video_active;
+			}
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Audio active");
-					});
-					row.col(|ui| {
-						let mut audio_active = self.flags.audio_active();
-						if egui::Checkbox::without_text(&mut audio_active)
-							.ui(ui)
-							.changed()
-						{
-							self.flags.set_audio_active(audio_active);
-						}
-					});
-				});
+			ui.label("Audio active");
+			let mut audio_active = self.flags.audio_active();
+			if egui::Checkbox::without_text(&mut audio_active)
+				.ui(ui)
+				.changed()
+			{
+				self.flags.set_audio_active(audio_active);
+			}
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Markers");
-					});
-					row.col(|ui| {
-						if ui.button(ICON_ADD).clicked() {
-							self.markers.push((String::from("DUMMY"), 0.0));
-						}
-					});
-				});
+			ui.label("Markers");
+			if ui.button(ICON_ADD).clicked() {
+				self.markers.push((String::from("DUMMY"), 0.0));
+			}
+			ui.end_row();
 
-				self.markers.retain_mut(|(name, value)| {
-					let mut want_deletion = false;
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.text_edit_singleline(name);
-						});
-						row.col(|ui| {
-							ui.horizontal(|ui| {
-								crate::app::num_edit(ui, value, 2);
-								if ui.button(ICON_REMOVE).clicked() {
-									want_deletion = true;
-								}
-							});
-						});
-					});
-					!want_deletion
-				});
+			self.markers.retain_mut(|(name, value)| {
+				let mut want_deletion = false;
+				ui.text_edit_singleline(name);
+				crate::app::num_edit(ui, value, 2);
+				if ui.button(ICON_REMOVE).clicked() {
+					want_deletion = true;
+				}
+				ui.end_row();
+				!want_deletion
 			});
+		});
 	}
 
 	fn has_context_menu(&self) -> bool {

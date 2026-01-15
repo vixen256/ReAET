@@ -80,76 +80,41 @@ impl TreeNode for SpriteSetNode {
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		let height = ui.text_style_height(&egui::TextStyle::Body);
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Name");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.name);
-					});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Name");
+			ui.text_edit_singleline(&mut self.name);
+			ui.end_row();
+
+			ui.label("Modern");
+			egui::Checkbox::without_text(&mut self.modern).ui(ui);
+			ui.end_row();
+
+			ui.label("Big Endian");
+			egui::Checkbox::without_text(&mut self.big_endian).ui(ui);
+			ui.end_row();
+
+			ui.label("X");
+			egui::Checkbox::without_text(&mut self.is_x).ui(ui);
+			ui.end_row();
+
+			if let Some(db_set) = &mut self.db_set {
+				let mut db_set = db_set.try_lock().unwrap();
+				ui.label("ID");
+				ui.horizontal(|ui| {
+					crate::app::num_edit(ui, &mut db_set.id, 0);
+
+					if ui.button("Murmur").clicked() {
+						db_set.id =
+							kkdlib::hash::murmurhash(db_set.name.bytes().collect::<Vec<_>>());
+					}
 				});
+				ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Modern");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.modern).ui(ui);
-					});
-				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Big Endian");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.big_endian).ui(ui);
-					});
-				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("X");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.is_x).ui(ui);
-					});
-				});
-
-				if let Some(db_set) = &mut self.db_set {
-					let mut db_set = db_set.try_lock().unwrap();
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("ID");
-						});
-						row.col(|ui| {
-							ui.horizontal(|ui| {
-								crate::app::num_edit(ui, &mut db_set.id, 0);
-
-								if ui.button("Murmur").clicked() {
-									db_set.id = kkdlib::hash::murmurhash(
-										db_set.name.bytes().collect::<Vec<_>>(),
-									);
-								}
-							});
-						});
-					});
-
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("Name");
-						});
-						row.col(|ui| {
-							ui.text_edit_singleline(&mut db_set.name);
-						});
-					});
-				}
-			});
+				ui.label("Name");
+				ui.text_edit_singleline(&mut db_set.name);
+				ui.end_row();
+			}
+		});
 	}
 }
 
@@ -1024,136 +989,80 @@ impl TreeNode for SpriteInfoNode {
 			self.paste(frame);
 		}
 
-		let height = ui.text_style_height(&egui::TextStyle::Body);
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Name");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.name);
-					});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Name");
+			ui.text_edit_singleline(&mut self.name);
+			ui.end_row();
+
+			ui.label("Texture");
+			let mut texture = self.info.texid();
+			let tex_name = &self.texture.try_lock().unwrap().name;
+			egui::ComboBox::from_id_salt("TextureComboBox")
+				.selected_text(tex_name)
+				.show_ui(ui, |ui| {
+					for (id, name) in self.texture_names.try_lock().unwrap().iter().enumerate() {
+						ui.selectable_value(&mut texture, id as u32, name);
+					}
 				});
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Texture");
-					});
-					row.col(|ui| {
-						let mut texture = self.info.texid();
-						let tex_name = &self.texture.try_lock().unwrap().name;
-						egui::ComboBox::from_id_salt("TextureComboBox")
-							.selected_text(tex_name)
-							.show_ui(ui, |ui| {
-								for (id, name) in
-									self.texture_names.try_lock().unwrap().iter().enumerate()
-								{
-									ui.selectable_value(&mut texture, id as u32, name);
-								}
-							});
+			if texture != self.info.texid() {
+				self.info.set_texid(texture);
+				self.want_new_texture = Some(texture);
+			}
+			ui.end_row();
 
-						if texture != self.info.texid() {
-							self.info.set_texid(texture);
-							self.want_new_texture = Some(texture);
-						}
-					});
+			ui.label("X");
+			let mut px = self.info.px();
+			crate::app::num_edit(ui, &mut px, 0);
+			self.info.set_px(px);
+			ui.end_row();
+
+			ui.label("Y");
+			let mut py = self.info.py();
+			crate::app::num_edit(ui, &mut py, 0);
+			self.info.set_py(py);
+			ui.end_row();
+
+			ui.label("Width");
+			let mut width = self.info.width();
+			crate::app::num_edit(ui, &mut width, 0);
+			self.info.set_width(width);
+			ui.end_row();
+
+			ui.label("Height");
+			let mut height = self.info.height();
+			crate::app::num_edit(ui, &mut height, 0);
+			self.info.set_height(height);
+			ui.end_row();
+
+			ui.label("Resolution Mode");
+			let mut resolution_mode = self.info.resolution_mode();
+			egui::ComboBox::from_id_salt("ResolutionModeComboBox")
+				.selected_text(format!("{:?}", resolution_mode))
+				.show_ui(ui, |ui| {
+					for i in 0..=0x20 {
+						let mode: spr::ResolutionMode = unsafe { std::mem::transmute(i) };
+						ui.selectable_value(&mut resolution_mode, mode, format!("{:?}", mode));
+					}
 				});
+			self.info.set_resolution_mode(resolution_mode);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("X");
-					});
-					row.col(|ui| {
-						let mut px = self.info.px();
-						if crate::app::num_edit(ui, &mut px, 0).changed() {
-							self.info.set_px(px);
-						}
-					});
+			if let Some(db_entry) = &mut self.db_entry {
+				let mut db_entry = db_entry.try_lock().unwrap();
+
+				ui.label("ID");
+				ui.horizontal(|ui| {
+					crate::app::num_edit(ui, &mut db_entry.id, 0);
+
+					if ui.button("Murmur").clicked() {
+						db_entry.id =
+							kkdlib::hash::murmurhash(db_entry.name.bytes().collect::<Vec<_>>());
+					}
 				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Y");
-					});
-					row.col(|ui| {
-						let mut py = self.info.py();
-						if crate::app::num_edit(ui, &mut py, 0).changed() {
-							self.info.set_py(py);
-						}
-					});
-				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Width");
-					});
-					row.col(|ui| {
-						let mut width = self.info.width();
-						if crate::app::num_edit(ui, &mut width, 0).changed() {
-							self.info.set_width(width);
-						}
-					});
-				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Height");
-					});
-					row.col(|ui| {
-						let mut height = self.info.height();
-						if crate::app::num_edit(ui, &mut height, 0).changed() {
-							self.info.set_height(height);
-						}
-					});
-				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Resolution Mode");
-					});
-					row.col(|ui| {
-						let mut resolution_mode = self.info.resolution_mode();
-						egui::ComboBox::from_id_salt("ResolutionModeComboBox")
-							.selected_text(format!("{:?}", resolution_mode))
-							.show_ui(ui, |ui| {
-								for i in 0..=0x20 {
-									let mode: spr::ResolutionMode =
-										unsafe { std::mem::transmute(i) };
-									ui.selectable_value(
-										&mut resolution_mode,
-										mode,
-										format!("{:?}", mode),
-									);
-								}
-							});
-						self.info.set_resolution_mode(resolution_mode);
-					});
-				});
-
-				if let Some(db_entry) = &mut self.db_entry {
-					let mut db_entry = db_entry.try_lock().unwrap();
-
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("ID");
-						});
-						row.col(|ui| {
-							ui.horizontal(|ui| {
-								crate::app::num_edit(ui, &mut db_entry.id, 0);
-
-								if ui.button("Murmur").clicked() {
-									db_entry.id = kkdlib::hash::murmurhash(
-										db_entry.name.bytes().collect::<Vec<_>>(),
-									);
-								}
-							});
-						});
-					});
-				}
-			});
+				ui.end_row();
+			}
+		});
 	}
 
 	fn selected(&mut self, frame: &mut eframe::Frame) {

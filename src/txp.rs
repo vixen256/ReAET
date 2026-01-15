@@ -52,40 +52,19 @@ impl TreeNode for TextureSetNode {
 
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if self.filename.is_some() {
-			let height = ui.text_style_height(&egui::TextStyle::Body);
-			egui_extras::TableBuilder::new(ui)
-				.column(egui_extras::Column::remainder())
-				.column(egui_extras::Column::remainder())
-				.body(|mut body| {
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("Modern");
-						});
-						row.col(|ui| {
-							egui::Checkbox::without_text(&mut self.modern).ui(ui);
-						});
-					});
+			crate::app::display_grid(ui, |ui| {
+				ui.label("Modern");
+				egui::Checkbox::without_text(&mut self.modern).ui(ui);
+				ui.end_row();
 
-					if self.modern {
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Signature");
-							});
-							row.col(|ui| {
-								crate::app::num_edit(ui, &mut self.signature, 0);
-							});
-						});
-					}
+				ui.label("Signature");
+				crate::app::num_edit(ui, &mut self.signature, 0);
+				ui.end_row();
 
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("Big Endian");
-						});
-						row.col(|ui| {
-							egui::Checkbox::without_text(&mut self.big_endian).ui(ui);
-						});
-					});
-				});
+				ui.label("Big Endian");
+				egui::Checkbox::without_text(&mut self.big_endian).ui(ui);
+				ui.end_row();
+			});
 		}
 	}
 
@@ -577,201 +556,135 @@ impl TreeNode for TextureNode {
 			self.paste(frame);
 		}
 
-		let height = ui.text_style_height(&egui::TextStyle::Body);
 		let mip = self.texture.get_mipmap(0, 0).unwrap();
 		let mut replacement_texture = None;
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Name");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.name);
-					});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Name");
+			ui.text_edit_singleline(&mut self.name);
+			ui.end_row();
+
+			ui.label("Size");
+			ui.label(format!("{}x{}", mip.width(), mip.height()));
+			ui.end_row();
+
+			if (self.texture.array_size() > 1 || self.texture.mipmaps_count() > 1)
+				&& !self.texture.is_ycbcr()
+			{
+				ui.label("Array size");
+				ui.label(format!(
+					"{}x{}",
+					self.texture.array_size(),
+					self.texture.mipmaps_count()
+				));
+				ui.end_row();
+			}
+
+			ui.label("Format");
+			let (old_format, selected) = if self.texture.is_ycbcr() {
+				(0x90, String::from("YACbCr (BC5)"))
+			} else {
+				(mip.format() as u32, format!("{:?}", mip.format()))
+			};
+			let mut format = old_format;
+
+			egui::ComboBox::from_id_salt("FormatComboBox")
+				.selected_text(selected)
+				.show_ui(ui, |ui| {
+					ui.selectable_value(&mut format, txp::Format::A8 as u32, "A8");
+					ui.selectable_value(&mut format, txp::Format::RGB8 as u32, "RGB8");
+					ui.selectable_value(&mut format, txp::Format::RGBA8 as u32, "RGBA8");
+					ui.selectable_value(&mut format, txp::Format::RGB5 as u32, "RGB5");
+					ui.selectable_value(&mut format, txp::Format::RGB5A1 as u32, "RGB5A1");
+					ui.selectable_value(&mut format, txp::Format::RGBA4 as u32, "RGBA4");
+					ui.selectable_value(&mut format, txp::Format::BC1 as u32, "BC1 (RGB)");
+					ui.selectable_value(&mut format, txp::Format::BC1a as u32, "BC1 (RGBA)");
+					ui.selectable_value(&mut format, txp::Format::BC2 as u32, "BC2");
+					ui.selectable_value(&mut format, txp::Format::BC3 as u32, "BC3");
+					ui.selectable_value(&mut format, txp::Format::BC4 as u32, "BC4 (R)");
+					ui.selectable_value(&mut format, txp::Format::BC5 as u32, "BC5 (RG)");
+					ui.selectable_value(&mut format, 0x90, "YACbCr (BC5)");
+					ui.selectable_value(&mut format, txp::Format::L8 as u32, "L8");
+					ui.selectable_value(&mut format, txp::Format::L8A8 as u32, "L8A8");
+					ui.selectable_value(&mut format, txp::Format::BC7 as u32, "BC7");
+					#[cfg(feature = "bc6h")]
+					ui.selectable_value(&mut format, txp::Format::BC6H as u32, "BC6H");
 				});
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Size");
-					});
-					row.col(|ui| {
-						ui.label(format!("{}x{}", mip.width(), mip.height()));
-					});
-				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Size");
-					});
-					row.col(|ui| {
-						ui.label(format!("{}x{}", mip.width(), mip.height()));
-					});
-				});
-				if (self.texture.array_size() > 1 || self.texture.mipmaps_count() > 1)
-					&& !self.texture.is_ycbcr()
-				{
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("Array size");
-						});
-						row.col(|ui| {
-							ui.label(format!(
-								"{}x{}",
-								self.texture.array_size(),
-								self.texture.mipmaps_count()
-							));
-						});
-					});
-				}
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Format");
-					});
-					row.col(|ui| {
-						let (old_format, selected) = if self.texture.is_ycbcr() {
-							(0x90, String::from("YACbCr (BC5)"))
-						} else {
-							(mip.format() as u32, format!("{:?}", mip.format()))
-						};
-						let mut format = old_format;
-
-						egui::ComboBox::from_id_salt("FormatComboBox")
-							.selected_text(selected)
-							.show_ui(ui, |ui| {
-								ui.selectable_value(&mut format, txp::Format::A8 as u32, "A8");
-								ui.selectable_value(&mut format, txp::Format::RGB8 as u32, "RGB8");
-								ui.selectable_value(
-									&mut format,
-									txp::Format::RGBA8 as u32,
-									"RGBA8",
-								);
-								ui.selectable_value(&mut format, txp::Format::RGB5 as u32, "RGB5");
-								ui.selectable_value(
-									&mut format,
-									txp::Format::RGB5A1 as u32,
-									"RGB5A1",
-								);
-								ui.selectable_value(
-									&mut format,
-									txp::Format::RGBA4 as u32,
-									"RGBA4",
-								);
-								ui.selectable_value(
-									&mut format,
-									txp::Format::BC1 as u32,
-									"BC1 (RGB)",
-								);
-								ui.selectable_value(
-									&mut format,
-									txp::Format::BC1a as u32,
-									"BC1 (RGBA)",
-								);
-								ui.selectable_value(&mut format, txp::Format::BC2 as u32, "BC2");
-								ui.selectable_value(&mut format, txp::Format::BC3 as u32, "BC3");
-								ui.selectable_value(
-									&mut format,
-									txp::Format::BC4 as u32,
-									"BC4 (R)",
-								);
-								ui.selectable_value(
-									&mut format,
-									txp::Format::BC5 as u32,
-									"BC5 (RG)",
-								);
-								ui.selectable_value(&mut format, 0x90, "YACbCr (BC5)");
-								ui.selectable_value(&mut format, txp::Format::L8 as u32, "L8");
-								ui.selectable_value(&mut format, txp::Format::L8A8 as u32, "L8A8");
-								ui.selectable_value(&mut format, txp::Format::BC7 as u32, "BC7");
-								#[cfg(feature = "bc6h")]
-								ui.selectable_value(&mut format, txp::Format::BC6H as u32, "BC6H");
-							});
-
-						if format != old_format {
-							if old_format == 0x90 {
-								let rgba = self.texture.decode_ycbcr().unwrap_or_default();
-								let render_state = &frame.wgpu_render_state().unwrap();
-								if let Some(mip) = txp::Mipmap::from_rgba_gpu(
-									mip.width(),
-									mip.height(),
-									&rgba,
-									unsafe { std::mem::transmute(format) },
-									&render_state.device,
-									&render_state.queue,
-								) {
-									let mut tex = txp::Texture::new();
-									tex.set_has_cube_map(false);
-									tex.set_array_size(1);
-									tex.set_mipmaps_count(1);
-									tex.add_mipmap(&mip);
-									replacement_texture = Some(tex);
-								}
-							} else if format == 0x90 {
-								let render_state = &frame.wgpu_render_state().unwrap();
-								let rgba = mip
-									.to_rgba_gpu(&render_state.device, &render_state.queue)
-									.unwrap_or_default();
-								replacement_texture = txp::Texture::encode_ycbcr(
-									mip.width() as u32,
-									mip.height() as u32,
-									&rgba,
-									&render_state.device,
-									&render_state.queue,
-								);
-							} else {
-								let mut tex = txp::Texture::new();
-								tex.set_has_cube_map(self.texture.has_cube_map());
-								tex.set_array_size(self.texture.array_size());
-								tex.set_mipmaps_count(self.texture.mipmaps_count());
-								for mip in self.texture.mipmaps() {
-									if mip.width() < 4 || mip.height() < 4 {
-										break;
-									}
-									let render_state = &frame.wgpu_render_state().unwrap();
-									let rgba = mip
-										.to_rgba_gpu(&render_state.device, &render_state.queue)
-										.unwrap_or_default();
-									if let Some(mip) = txp::Mipmap::from_rgba_gpu(
-										mip.width(),
-										mip.height(),
-										&rgba,
-										unsafe { std::mem::transmute(format) },
-										&render_state.device,
-										&render_state.queue,
-									) {
-										tex.add_mipmap(&mip);
-									}
-								}
-								replacement_texture = Some(tex);
-							}
+			if format != old_format {
+				if old_format == 0x90 {
+					let rgba = self.texture.decode_ycbcr().unwrap_or_default();
+					let render_state = &frame.wgpu_render_state().unwrap();
+					if let Some(mip) = txp::Mipmap::from_rgba_gpu(
+						mip.width(),
+						mip.height(),
+						&rgba,
+						unsafe { std::mem::transmute(format) },
+						&render_state.device,
+						&render_state.queue,
+					) {
+						let mut tex = txp::Texture::new();
+						tex.set_has_cube_map(false);
+						tex.set_array_size(1);
+						tex.set_mipmaps_count(1);
+						tex.add_mipmap(&mip);
+						replacement_texture = Some(tex);
+					}
+				} else if format == 0x90 {
+					let render_state = &frame.wgpu_render_state().unwrap();
+					let rgba = mip
+						.to_rgba_gpu(&render_state.device, &render_state.queue)
+						.unwrap_or_default();
+					replacement_texture = txp::Texture::encode_ycbcr(
+						mip.width() as u32,
+						mip.height() as u32,
+						&rgba,
+						&render_state.device,
+						&render_state.queue,
+					);
+				} else {
+					let mut tex = txp::Texture::new();
+					tex.set_has_cube_map(self.texture.has_cube_map());
+					tex.set_array_size(self.texture.array_size());
+					tex.set_mipmaps_count(self.texture.mipmaps_count());
+					for mip in self.texture.mipmaps() {
+						if mip.width() < 4 || mip.height() < 4 {
+							break;
 						}
-					});
-				});
-
-				if let Some(db_entry) = &mut self.db_entry {
-					let mut db_entry = db_entry.try_lock().unwrap();
-
-					body.row(height, |mut row| {
-						row.col(|ui| {
-							ui.label("ID");
-						});
-						row.col(|ui| {
-							ui.horizontal(|ui| {
-								crate::app::num_edit(ui, &mut db_entry.id, 0);
-
-								if ui.button("Murmur").clicked() {
-									db_entry.id = kkdlib::hash::murmurhash(
-										db_entry.name.bytes().collect::<Vec<_>>(),
-									);
-								}
-							});
-						});
-					});
+						let render_state = &frame.wgpu_render_state().unwrap();
+						let rgba = mip
+							.to_rgba_gpu(&render_state.device, &render_state.queue)
+							.unwrap_or_default();
+						if let Some(mip) = txp::Mipmap::from_rgba_gpu(
+							mip.width(),
+							mip.height(),
+							&rgba,
+							unsafe { std::mem::transmute(format) },
+							&render_state.device,
+							&render_state.queue,
+						) {
+							tex.add_mipmap(&mip);
+						}
+					}
+					replacement_texture = Some(tex);
 				}
-			});
+			}
+			ui.end_row();
+
+			if let Some(db_entry) = &mut self.db_entry {
+				let mut db_entry = db_entry.try_lock().unwrap();
+
+				ui.label("ID");
+				ui.horizontal(|ui| {
+					crate::app::num_edit(ui, &mut db_entry.id, 0);
+
+					if ui.button("Murmur").clicked() {
+						db_entry.id =
+							kkdlib::hash::murmurhash(db_entry.name.bytes().collect::<Vec<_>>());
+					}
+				});
+				ui.end_row();
+			}
+		});
 
 		if let Some(tex) = replacement_texture {
 			self.texture = tex;

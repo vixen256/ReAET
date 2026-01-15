@@ -471,6 +471,13 @@ pub fn num_edit<Num: egui::emath::Numeric + std::str::FromStr + std::fmt::Displa
 	.inner
 }
 
+pub fn display_grid(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+	egui::Grid::new(ui.next_auto_id())
+		.num_columns(2)
+		.striped(true)
+		.show(ui, |ui| add_contents(ui));
+}
+
 pub fn show_node(
 	ui: &mut egui::Ui,
 	node: &mut dyn TreeNode,
@@ -1364,140 +1371,71 @@ impl eframe::App for App {
 					ui.label(egui::RichText::new("Shortcuts").size(20.0));
 				});
 
-				let height = ui.text_style_height(&egui::TextStyle::Body);
-				egui_extras::TableBuilder::new(ui)
-					.column(egui_extras::Column::remainder())
-					.column(egui_extras::Column::remainder())
-					.body(|mut body| {
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Open file");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&OPEN_SHORTCUT));
-							});
-						});
+				crate::app::display_grid(ui, |ui| {
+					ui.label("Open file");
+					ui.label(ctx.format_shortcut(&OPEN_SHORTCUT));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Save file");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&SAVE_SHORTCUT));
-							});
-						});
+					ui.label("Save file");
+					ui.label(ctx.format_shortcut(&SAVE_SHORTCUT));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Save file to");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&SAVE_TO_SHORTCUT));
-							});
-						});
+					ui.label("Save file to");
+					ui.label(ctx.format_shortcut(&SAVE_TO_SHORTCUT));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Close file");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&CLOSE_SHORTCUT));
-							});
-						});
+					ui.label("Close file");
+					ui.label(ctx.format_shortcut(&CLOSE_SHORTCUT));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Undo");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&UNDO_SHORTCUT));
-							});
-						});
+					ui.label("Undo");
+					ui.label(ctx.format_shortcut(&UNDO_SHORTCUT));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Redo");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&REDO_SHORTCUT));
-							});
-						});
+					ui.label("Redo");
+					ui.label(ctx.format_shortcut(&REDO_SHORTCUT));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Export");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&EXPORT_SHORTCUT));
-							});
-						});
+					ui.label("Export");
+					ui.label(ctx.format_shortcut(&EXPORT_SHORTCUT));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Replace");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&REPLACE_SHORTCUT));
-							});
-						});
+					ui.label("Replace");
+					ui.label(ctx.format_shortcut(&REPLACE_SHORTCUT));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Copy");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
-									modifiers: egui::Modifiers::COMMAND,
-									logical_key: egui::Key::C,
-								}));
-							});
-						});
+					ui.label("Copy");
+					ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
+						modifiers: egui::Modifiers::COMMAND,
+						logical_key: egui::Key::C,
+					}));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Paste");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
-									modifiers: egui::Modifiers::COMMAND,
-									logical_key: egui::Key::V,
-								}));
-							});
-						});
+					ui.label("Paste");
+					ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
+						modifiers: egui::Modifiers::COMMAND,
+						logical_key: egui::Key::V,
+					}));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Paste into");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
-									modifiers: egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-									logical_key: egui::Key::V,
-								}));
-							});
-						});
+					ui.label("Paste into");
+					ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
+						modifiers: egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+						logical_key: egui::Key::V,
+					}));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Insert keyframe");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
-									modifiers: egui::Modifiers::COMMAND,
-									logical_key: egui::Key::I,
-								}));
-							});
-						});
+					ui.label("Insert keyframe");
+					ui.label(ctx.format_shortcut(&egui::KeyboardShortcut {
+						modifiers: egui::Modifiers::COMMAND,
+						logical_key: egui::Key::I,
+					}));
+					ui.end_row();
 
-						body.row(height, |mut row| {
-							row.col(|ui| {
-								ui.label("Only move current keyframe");
-							});
-							row.col(|ui| {
-								ui.label(ctx.format_modifiers(egui::Modifiers::CTRL));
-							});
-						});
-					});
+					ui.label("Only move current keyframe");
+					ui.label(ctx.format_modifiers(egui::Modifiers::CTRL));
+					ui.end_row();
+				});
 
 				ui.vertical_centered(|ui| {
 					if ui.button("Close").clicked() {

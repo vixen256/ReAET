@@ -61,38 +61,19 @@ impl TreeNode for SprDbNode {
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		let height = ui.text_style_height(&egui::TextStyle::Body);
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Modern");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.modern).ui(ui);
-					});
-				});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Modern");
+			egui::Checkbox::without_text(&mut self.modern).ui(ui);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Big Endian");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.big_endian).ui(ui);
-					});
-				});
+			ui.label("Big Endian");
+			egui::Checkbox::without_text(&mut self.big_endian).ui(ui);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("X");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.is_x).ui(ui);
-					});
-				});
-			});
+			ui.label("X");
+			egui::Checkbox::without_text(&mut self.is_x).ui(ui);
+			ui.end_row();
+		});
 	}
 }
 
@@ -154,45 +135,25 @@ impl TreeNode for SprDbSetNode {
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		let height = ui.text_style_height(&egui::TextStyle::Body);
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Name");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.name);
-					});
-				});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Name");
+			ui.text_edit_singleline(&mut self.name);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("File");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.file_name);
-					});
-				});
+			ui.label("File");
+			ui.text_edit_singleline(&mut self.file_name);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("ID");
-					});
-					row.col(|ui| {
-						ui.horizontal(|ui| {
-							crate::app::num_edit(ui, &mut self.id, 0);
+			ui.label("ID");
+			ui.horizontal(|ui| {
+				crate::app::num_edit(ui, &mut self.id, 0);
 
-							if ui.button("Murmur").clicked() {
-								self.id =
-									kkdlib::hash::murmurhash(self.name.bytes().collect::<Vec<_>>());
-							}
-						});
-					});
-				});
+				if ui.button("Murmur").clicked() {
+					self.id = kkdlib::hash::murmurhash(self.name.bytes().collect::<Vec<_>>());
+				}
 			});
+			ui.end_row();
+		});
 	}
 }
 
@@ -209,53 +170,28 @@ impl TreeNode for SprDbEntryNode {
 	}
 
 	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		let height = ui.text_style_height(&egui::TextStyle::Body);
-		egui_extras::TableBuilder::new(ui)
-			.column(egui_extras::Column::remainder())
-			.column(egui_extras::Column::remainder())
-			.body(|mut body| {
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Name");
-					});
-					row.col(|ui| {
-						ui.text_edit_singleline(&mut self.name);
-					});
-				});
+		crate::app::display_grid(ui, |ui| {
+			ui.label("Name");
+			ui.text_edit_singleline(&mut self.name);
+			ui.end_row();
 
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("ID");
-					});
-					row.col(|ui| {
-						ui.horizontal(|ui| {
-							crate::app::num_edit(ui, &mut self.id, 0);
+			ui.label("ID");
+			ui.horizontal(|ui| {
+				crate::app::num_edit(ui, &mut self.id, 0);
 
-							if ui.button("Murmur").clicked() {
-								self.id =
-									kkdlib::hash::murmurhash(self.name.bytes().collect::<Vec<_>>());
-							}
-						});
-					});
-				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Index");
-					});
-					row.col(|ui| {
-						crate::app::num_edit(ui, &mut self.index, 0);
-					});
-				});
-
-				body.row(height, |mut row| {
-					row.col(|ui| {
-						ui.label("Texture");
-					});
-					row.col(|ui| {
-						egui::Checkbox::without_text(&mut self.texture).ui(ui);
-					});
-				});
+				if ui.button("Murmur").clicked() {
+					self.id = kkdlib::hash::murmurhash(self.name.bytes().collect::<Vec<_>>());
+				}
 			});
+			ui.end_row();
+
+			ui.label("Index");
+			crate::app::num_edit(ui, &mut self.index, 0);
+			ui.end_row();
+
+			ui.label("Texture");
+			egui::Checkbox::without_text(&mut self.texture).ui(ui);
+			ui.end_row();
+		});
 	}
 }
