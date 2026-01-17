@@ -1611,27 +1611,23 @@ impl eframe::App for App {
 			.resizable(true)
 			.show(ctx, |ui| {
 				if !self.selected.is_empty() && self.multi_select.is_empty() {
-					egui::TopBottomPanel::bottom("NodeOptions")
-						.resizable(true)
-						.show_inside(ui, |ui| {
-							if let Some(node) = &mut self.aet_set
-								&& self.selected[0] == 0
-							{
-								show_node_opts(ui, node, 0, 0, &[], &self.selected, frame);
-							}
-							if let Some(node) = &mut self.sprite_set
-								&& self.selected[0] == 1
-							{
-								show_node_opts(ui, node, 1, 0, &[], &self.selected, frame);
-							}
-							if let Some(node) = &mut self.spr_db
-								&& self.selected[0] == 2
-							{
-								show_node_opts(ui, node, 2, 0, &[], &self.selected, frame);
-							}
-
-							ui.take_available_space();
-						});
+					egui::TopBottomPanel::bottom("NodeOptions").show_inside(ui, |ui| {
+						if self.selected[0] == 0
+							&& let Some(node) = &mut self.aet_set
+						{
+							show_node_opts(ui, node, 0, 0, &[], &self.selected, frame);
+						}
+						if self.selected[0] == 1
+							&& let Some(node) = &mut self.sprite_set
+						{
+							show_node_opts(ui, node, 1, 0, &[], &self.selected, frame);
+						}
+						if self.selected[0] == 2
+							&& let Some(node) = &mut self.spr_db
+						{
+							show_node_opts(ui, node, 2, 0, &[], &self.selected, frame);
+						}
+					});
 				}
 
 				egui::ScrollArea::vertical().show(ui, |ui| {
