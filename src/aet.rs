@@ -342,6 +342,12 @@ impl TreeNode for AetSceneNode {
 				layer.try_lock().unwrap().visible = false;
 			}
 		}
+
+		if ui.button("Show all").clicked() {
+			for layer in &mut self.root.layers {
+				layer.try_lock().unwrap().visible = true;
+			}
+		}
 	}
 }
 
@@ -2093,17 +2099,29 @@ impl TreeNode for AetLayerNode {
 	}
 
 	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-		if let AetItemNode::Comp(comp) = &mut self.item
-			&& ui.button("Add").clicked()
-		{
-			let mut layer = Self::create_with_item(AetItemNode::None);
-			layer.sprites = self.sprites.clone();
-			layer.flags = aet::LayerFlagsBuilder::new()
-				.with_video_active(true)
-				.with_audio_active(true)
-				.build();
-			layer.quality = aet::LayerQuality::Best;
-			comp.layers.push(Rc::new(Mutex::new(layer)));
+		if let AetItemNode::Comp(comp) = &mut self.item {
+			if ui.button("Add").clicked() {
+				let mut layer = Self::create_with_item(AetItemNode::None);
+				layer.sprites = self.sprites.clone();
+				layer.flags = aet::LayerFlagsBuilder::new()
+					.with_video_active(true)
+					.with_audio_active(true)
+					.build();
+				layer.quality = aet::LayerQuality::Best;
+				comp.layers.push(Rc::new(Mutex::new(layer)));
+			}
+
+			if ui.button("Hide all").clicked() {
+				for layer in &mut comp.layers {
+					layer.try_lock().unwrap().visible = false;
+				}
+			}
+
+			if ui.button("Show all").clicked() {
+				for layer in &mut comp.layers {
+					layer.try_lock().unwrap().visible = true;
+				}
+			}
 		}
 
 		if ui.button("Duplicate").clicked() {
