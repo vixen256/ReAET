@@ -1657,13 +1657,14 @@ impl eframe::App for App {
 								.skip(1)
 								.zip(old_selected.iter().rev().skip(1))
 								.all(|(new, old)| new == old)
-							&& ui.ctx().input(|i| {
+							&& ctx.input(|i| {
 								(i.modifiers.ctrl
 									|| (self.selected[self.selected.len() - 2]
 										== old_selected[old_selected.len() - 2]
 										&& i.modifiers.shift)) && i.pointer.primary_clicked()
 									&& ui.max_rect().contains(i.pointer.interact_pos().unwrap())
-							}) {
+							}) && ctx.dragged_id().is_none()
+						{
 							if self.multi_select.is_empty() {
 								let old_layer = get_selected_layer(node, &old_selected);
 								old_layer.try_lock().unwrap().multi_selected = true;
@@ -1702,11 +1703,12 @@ impl eframe::App for App {
 									self.multi_select.push(new_layer);
 								}
 							}
-						} else if ui.ctx().interaction_snapshot(|i| i.clicked.is_some())
-							&& ui.ctx().input(|i| {
-								i.pointer.primary_clicked()
-									&& ui.max_rect().contains(i.pointer.interact_pos().unwrap())
-							}) && !ui.ctx().is_popup_open()
+						} else if ctx.dragged_id().is_some()
+							|| (ui.ctx().interaction_snapshot(|i| i.clicked.is_some())
+								&& ui.ctx().input(|i| {
+									i.pointer.primary_clicked()
+										&& ui.max_rect().contains(i.pointer.interact_pos().unwrap())
+								}) && !ui.ctx().is_popup_open())
 						{
 							for layer in &mut self.multi_select {
 								let mut layer = layer.try_lock().unwrap();

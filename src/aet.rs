@@ -1453,7 +1453,7 @@ impl AetCompNode {
 												.with(state.index)
 												.with("dnd"),
 										),
-										egui::Sense::click_and_drag(),
+										egui::Sense::drag(),
 									),
 									ui,
 								);
