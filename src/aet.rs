@@ -1410,8 +1410,22 @@ impl AetCompNode {
 					i,
 					true,
 					|ui, item_handle| {
-						item_handle.ui(ui, |ui, mut handle, state| {
+						item_handle.ui(ui, |ui, handle, state| {
 							ui.horizontal(|ui| {
+								let id = ui.make_persistent_id(
+									egui::Id::new(&layer.name)
+										.with(path)
+										.with(state.index)
+										.with("dnd"),
+								);
+
+								if let Some(rect) = ui.data(|data| data.get_temp(id)) {
+									handle.show_drag_cursor_on_hover(false).handle_response(
+										ui.interact(rect, id, egui::Sense::drag()),
+										ui,
+									);
+								}
+
 								let resp = crate::app::show_node(
 									ui,
 									&mut *layer,
@@ -1431,32 +1445,16 @@ impl AetCompNode {
 								}
 
 								let rect = egui::Rect {
-									min: egui::pos2(
-										resp.rect.max.x + ui.spacing().item_spacing.x,
-										resp.rect.min.y,
-									),
+									min: resp.rect.min,
 									max: egui::pos2(
 										resp.rect.max.x + ui.available_size().x
 											- ui.spacing().item_spacing.x,
 										resp.rect.min.y
-											+ ui.text_style_height(&egui::TextStyle::Body)
-											- ui.spacing().item_spacing.y,
+											+ ui.text_style_height(&egui::TextStyle::Body),
 									),
 								};
 
-								handle.handle_response(
-									ui.interact(
-										rect,
-										ui.make_persistent_id(
-											egui::Id::new(&layer.name)
-												.with(path)
-												.with(state.index)
-												.with("dnd"),
-										),
-										egui::Sense::drag(),
-									),
-									ui,
-								);
+								ui.data_mut(|data| data.insert_temp(id, rect));
 
 								last_resp = Some(resp);
 							});
