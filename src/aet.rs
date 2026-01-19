@@ -9,6 +9,7 @@ use egui_plot::PlotItem;
 use glam::{Mat4, Vec4};
 use kkdlib::*;
 use parking_lot::*;
+use pollster::FutureExt;
 use std::collections::*;
 use std::ops::*;
 use std::rc::Rc;
@@ -138,7 +139,10 @@ impl AetSetNode {
 
 					selected_curve: None,
 					gizmo: Gizmo::default(),
-					background_color: [0.0, 0.0, 0.0],
+
+					background_movie: None,
+					error: None,
+					movie_offset: 0.0,
 				}
 			})
 			.collect();
@@ -172,7 +176,10 @@ pub struct AetSceneNode {
 
 	pub selected_curve: Option<CurveType>,
 	pub gizmo: Gizmo,
-	pub background_color: [f32; 3],
+
+	pub background_movie: Option<crate::movie::Movie>,
+	pub error: Option<String>,
+	pub movie_offset: f64,
 }
 
 impl PartialEq for AetSceneNode {
@@ -281,7 +288,23 @@ impl TreeNode for AetSceneNode {
 		resp
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+		if let Some(error) = &self.error {
+			let modal = egui::Modal::new(egui::Id::new("AetSetError")).show(ui.ctx(), |ui| {
+				ui.heading("An error has occured");
+				ui.vertical_centered(|ui| {
+					ui.label(error);
+					if ui.button("Ok").clicked() {
+						ui.close();
+					}
+				});
+			});
+
+			if modal.should_close() {
+				self.error = None;
+			}
+		}
+
 		crate::app::display_grid(ui, |ui| {
 			ui.label("Name");
 			ui.text_edit_singleline(&mut self.name);
@@ -307,8 +330,36 @@ impl TreeNode for AetSceneNode {
 			crate::app::num_edit(ui, &mut self.height, 0);
 			ui.end_row();
 
-			ui.label("Background color");
-			ui.color_edit_button_rgb(&mut self.background_color);
+			if ui.button("Background Movie").clicked() {
+				async {
+					let Some(file) = rfd::AsyncFileDialog::new()
+						.add_filter("Videos (.mp4, .mkv, .webm)", &["mp4", "mkv", "webm"])
+						.set_file_name(&self.name)
+						.pick_file()
+						.await
+					else {
+						return;
+					};
+
+					match crate::movie::Movie::open(file.path(), frame.wgpu_render_state().unwrap())
+					{
+						Ok(movie) => self.background_movie = Some(movie),
+						Err(e) => self.error = Some(e),
+					}
+				}
+				.block_on();
+			}
+			if let Some(movie) = &self.background_movie {
+				ui.label(unsafe {
+					std::ffi::CStr::from_ptr(movie.input_ctx.read().url)
+						.to_string_lossy()
+						.to_string()
+				});
+				ui.end_row();
+
+				ui.label("Offset");
+				crate::app::num_edit(ui, &mut self.movie_offset, 2);
+			}
 			ui.end_row();
 		});
 	}
@@ -380,7 +431,7 @@ impl AetSceneNode {
 			sprites: BTreeMap::new(),
 			matte_sprites: Vec::new(),
 			viewport_size: [self.width as f32, self.height as f32],
-			background_color: self.background_color,
+			show_background: true,
 		};
 		videos.sprites.insert(
 			0,
@@ -389,6 +440,16 @@ impl AetSceneNode {
 				texture_coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
 			},
 		);
+
+		if let Some(movie) = &mut self.background_movie
+			&& let Some(frame) = movie.get_frame(
+				ui,
+				self.current_time as f64 / self.fps as f64 + self.movie_offset,
+			) {
+			ui.painter()
+				.add(egui_wgpu::Callback::new_paint_callback(rect, frame.clone()));
+			videos.show_background = false;
+		}
 
 		self.root.display(
 			mat,
@@ -2875,7 +2936,7 @@ pub struct AetAudioNode {
 
 struct WgpuAetVideos {
 	viewport_size: [f32; 2],
-	background_color: [f32; 3],
+	show_background: bool,
 	videos: Vec<WgpuAetVideo>,
 	sprites: BTreeMap<u32, WgpuAetSpriteInfo>,
 	matte_sprites: Vec<(WgpuAetSpriteInfo, WgpuAetSpriteInfo)>,
@@ -3070,12 +3131,7 @@ impl egui_wgpu::CallbackTrait for WgpuAetVideos {
 				),
 			)
 			.to_cols_array_2d(),
-			color: [
-				self.background_color[0],
-				self.background_color[1],
-				self.background_color[2],
-				1.0,
-			],
+			color: [0.0, 0.0, 0.0, if self.show_background { 1.0 } else { 0.0 }],
 			has_matte: 0,
 			_padding_0: 0,
 			_padding_1: 0,

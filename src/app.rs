@@ -243,6 +243,7 @@ impl App {
 
 		let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
 		txp::setup_wgpu(wgpu_render_state);
+		movie::setup_wgpu(wgpu_render_state);
 
 		Some(Self {
 			aet_set: None,

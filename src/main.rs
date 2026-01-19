@@ -1,5 +1,6 @@
 pub mod aet;
 pub mod app;
+pub mod movie;
 pub mod spr;
 pub mod spr_db;
 pub mod txp;
