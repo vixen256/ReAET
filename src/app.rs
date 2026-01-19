@@ -225,12 +225,34 @@ pub struct App {
 	undoer: LayerUndoer,
 	copied_layer: Option<aet::AetLayerNode>,
 	frametimes: VecDeque<(f64, f32)>,
+
+	preferences: Preferences,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct Preferences {
+	#[serde(skip)]
+	pub editing: bool,
+	pub scale: f32,
+	pub theme: egui::Theme,
 }
 
 impl App {
 	pub fn new(cc: &eframe::CreationContext) -> Option<Self> {
-		cc.egui_ctx.set_zoom_factor(1.2);
-		cc.egui_ctx.set_theme(egui::Theme::Light);
+		let preferences = if let Some(storage) = cc.storage
+			&& let Some(preferences) = eframe::get_value(storage, eframe::APP_KEY)
+		{
+			preferences
+		} else {
+			Preferences {
+				editing: false,
+				scale: 1.2,
+				theme: cc.egui_ctx.system_theme().unwrap_or(egui::Theme::Light),
+			}
+		};
+
+		cc.egui_ctx.set_zoom_factor(preferences.scale);
+		cc.egui_ctx.set_theme(preferences.theme);
 
 		egui_material_icons::initialize(&cc.egui_ctx);
 		cc.egui_ctx.style_mut(|style| {
@@ -261,6 +283,7 @@ impl App {
 			undoer: LayerUndoer::new(),
 			copied_layer: None,
 			frametimes: VecDeque::new(),
+			preferences,
 		})
 	}
 }
@@ -1200,6 +1223,10 @@ pub const REPLACE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut {
 };
 
 impl eframe::App for App {
+	fn save(&mut self, storage: &mut dyn eframe::Storage) {
+		eframe::set_value(storage, eframe::APP_KEY, &self.preferences);
+	}
+
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 		if let Some(cpu_usage) = frame.info().cpu_usage {
 			let (time, dt) = ctx.input(|i| (i.time, i.unstable_dt as f64));
@@ -1450,6 +1477,60 @@ impl eframe::App for App {
 			}
 		}
 
+		if self.preferences.editing {
+			let modal = egui::Modal::new(egui::Id::new("PreferencesModal")).show(ctx, |ui| {
+				display_grid(ui, |ui| {
+					ui.label("Theme");
+					egui::ComboBox::from_id_salt("ThemeComboBox")
+						.selected_text(if self.preferences.theme == egui::Theme::Light {
+							"Light"
+						} else {
+							"Dark"
+						})
+						.show_ui(ui, |ui| {
+							if ui
+								.selectable_value(
+									&mut self.preferences.theme,
+									egui::Theme::Light,
+									"Light",
+								)
+								.clicked()
+							{
+								ctx.set_theme(self.preferences.theme);
+							}
+							if ui
+								.selectable_value(
+									&mut self.preferences.theme,
+									egui::Theme::Dark,
+									"Dark",
+								)
+								.clicked()
+							{
+								ctx.set_theme(self.preferences.theme);
+							}
+						});
+					ui.end_row();
+
+					ui.label("Scale");
+					if num_edit(ui, &mut self.preferences.scale, 2).changed() {
+						self.preferences.scale = self.preferences.scale.clamp(0.1, f32::INFINITY);
+						ctx.set_zoom_factor(self.preferences.scale);
+					}
+					ui.end_row();
+				});
+
+				ui.vertical_centered(|ui| {
+					if ui.button("Close").clicked() {
+						ui.close();
+					}
+				});
+			});
+
+			if modal.should_close() {
+				self.preferences.editing = false;
+			}
+		}
+
 		if let Some(aet_set) = &self.aet_set {
 			if self.multi_select.is_empty() {
 				self.undoer
@@ -1588,6 +1669,10 @@ impl eframe::App for App {
 							egui::Button::new("Redo")
 								.shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
 						);
+					}
+
+					if ui.button("Preferences").clicked() {
+						self.preferences.editing = true;
 					}
 				});
 
