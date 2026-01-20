@@ -247,7 +247,7 @@ impl Movie {
 			if time <= 0.0
 				|| time + 0.1 >= self.input_ctx.read().duration as f64 * av_q2d(AV_TIME_BASE_Q)
 			{
-				return None;
+				return self.buffered_frames.back();
 			}
 
 			if let Some(front) = self.buffered_frames.front()
@@ -274,15 +274,21 @@ impl Movie {
 				}
 			}
 
+			let back = self.buffered_frames.back().cloned();
 			self.buffered_frames
 				.retain_mut(|frame| frame.time + 1.0 >= time && frame.time - 1.0 <= time);
+			if self.buffered_frames.is_empty()
+				&& let Some(back) = back
+			{
+				self.buffered_frames.push_back(back);
+			}
 
 			for _ in 0..20 {
 				let mut packet = av_packet_alloc();
 				let res = av_read_frame(self.input_ctx, packet);
 				if res < 0 {
 					av_packet_free(&mut packet);
-					return None;
+					return self.buffered_frames.back();
 				}
 				if packet.read().stream_index != self.stream_index {
 					av_packet_free(&mut packet);
@@ -292,7 +298,7 @@ impl Movie {
 				let res = avcodec_send_packet(self.decoder_ctx, packet);
 				if res < 0 && res != AVERROR(EAGAIN) {
 					av_packet_free(&mut packet);
-					return None;
+					return self.buffered_frames.back();
 				}
 
 				let mut frame = av_frame_alloc();
@@ -303,7 +309,7 @@ impl Movie {
 					if res == AVERROR(EAGAIN) {
 						continue;
 					} else {
-						return None;
+						return self.buffered_frames.back();
 					}
 				}
 
