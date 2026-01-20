@@ -131,14 +131,13 @@ impl Movie {
 				}
 			};
 
-			let (format, depth) = if decoder_ctx.read().pix_fmt == AVPixelFormat::AV_PIX_FMT_YUV420P
-			{
-				(wgpu::TextureFormat::R8Uint, 2u32.pow(8) as f32)
-			} else if decoder_ctx.read().pix_fmt == AVPixelFormat::AV_PIX_FMT_YUV420P10LE {
-				(wgpu::TextureFormat::R16Uint, 2u32.pow(10) as f32)
+			let depth = av_pix_fmt_desc_get(decoder_ctx.read().pix_fmt).read().comp[0].depth;
+			let format = if depth > 8 {
+				wgpu::TextureFormat::R16Uint
 			} else {
-				panic!("Unknown pixel format");
+				wgpu::TextureFormat::R8Uint
 			};
+			let depth = 2u32.pow(depth as u32) as f32;
 
 			let device = &render_state.device;
 			let y_texture = device.create_texture(&wgpu::TextureDescriptor {
