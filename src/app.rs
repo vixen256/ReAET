@@ -1481,34 +1481,28 @@ impl eframe::App for App {
 			let modal = egui::Modal::new(egui::Id::new("PreferencesModal")).show(ctx, |ui| {
 				display_grid(ui, |ui| {
 					ui.label("Theme");
-					egui::ComboBox::from_id_salt("ThemeComboBox")
+					let combo = egui::ComboBox::from_id_salt("ThemeComboBox")
 						.selected_text(if self.preferences.theme == egui::Theme::Light {
 							"Light"
 						} else {
 							"Dark"
 						})
 						.show_ui(ui, |ui| {
-							if ui
-								.selectable_value(
-									&mut self.preferences.theme,
-									egui::Theme::Light,
-									"Light",
-								)
-								.clicked()
-							{
-								ctx.set_theme(self.preferences.theme);
-							}
-							if ui
-								.selectable_value(
-									&mut self.preferences.theme,
-									egui::Theme::Dark,
-									"Dark",
-								)
-								.clicked()
-							{
-								ctx.set_theme(self.preferences.theme);
-							}
+							let light = ui.selectable_value(
+								&mut self.preferences.theme,
+								egui::Theme::Light,
+								"Light",
+							);
+							let dark = ui.selectable_value(
+								&mut self.preferences.theme,
+								egui::Theme::Dark,
+								"Dark",
+							);
+							light.clicked() || dark.clicked()
 						});
+					if combo.inner.unwrap_or(false) {
+						ctx.set_theme(self.preferences.theme);
+					}
 					ui.end_row();
 
 					ui.label("Scale");
@@ -1916,7 +1910,6 @@ impl eframe::App for App {
 										&mut scene.display_placeholders,
 										"Display placeholders",
 									);
-									ui.checkbox(&mut scene.centered, "Centered");
 									ui.add(
 										egui::Slider::new(
 											&mut scene.current_time,
@@ -1948,7 +1941,6 @@ impl eframe::App for App {
 						}
 
 						ui.checkbox(&mut scene.display_placeholders, "Display placeholders");
-						ui.checkbox(&mut scene.centered, "Centered");
 						ui.add(
 							egui::Slider::new(
 								&mut scene.current_time,

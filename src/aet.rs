@@ -135,10 +135,10 @@ impl AetSetNode {
 					current_time: scene.start_time,
 					playing: false,
 					display_placeholders: false,
-					centered: false,
 
 					selected_curve: None,
 					gizmo: Gizmo::default(),
+					pan: [0.0, 0.0],
 
 					background_movie: None,
 					error: None,
@@ -172,10 +172,10 @@ pub struct AetSceneNode {
 	pub current_time: f32,
 	pub playing: bool,
 	pub display_placeholders: bool,
-	pub centered: bool,
 
 	pub selected_curve: Option<CurveType>,
 	pub gizmo: Gizmo,
+	pub pan: [f32; 2],
 
 	pub background_movie: Option<crate::movie::Movie>,
 	pub error: Option<String>,
@@ -330,6 +330,14 @@ impl TreeNode for AetSceneNode {
 			crate::app::num_edit(ui, &mut self.height, 0);
 			ui.end_row();
 
+			ui.label("Pan X");
+			crate::app::num_edit(ui, &mut self.pan[0], 0);
+			ui.end_row();
+
+			ui.label("Pan Y");
+			crate::app::num_edit(ui, &mut self.pan[1], 0);
+			ui.end_row();
+
 			if ui.button("Background Movie").clicked() {
 				async {
 					let Some(file) = rfd::AsyncFileDialog::new()
@@ -410,10 +418,8 @@ impl AetSceneNode {
 		selected: &mut Vec<usize>,
 	) {
 		let mut mat = Mat4::IDENTITY;
-		if self.centered {
-			mat.w_axis.x = self.width as f32 / 2.0;
-			mat.w_axis.y = self.height as f32 / 2.0;
-		}
+		mat.w_axis.x = self.pan[0];
+		mat.w_axis.y = self.pan[1];
 
 		if let Some(camera) = &self.camera {
 			let mut eye = [0.0; 3];
@@ -468,9 +474,17 @@ impl AetSceneNode {
 			let mut frame = self.current_time;
 			let mut m = Mat4::IDENTITY;
 			let mut opacity = 0.0;
-			if self.centered {
-				m.w_axis.x = self.width as f32 / 2.0;
-				m.w_axis.y = self.height as f32 / 2.0;
+			m.w_axis.x = self.pan[0];
+			m.w_axis.y = self.pan[1];
+
+			if let Some(camera) = &self.camera {
+				let mut eye = [0.0; 3];
+
+				eye[0] = camera.eye_x.interpolate(self.current_time) - self.width as f32 * 0.5;
+				eye[1] = camera.eye_y.interpolate(self.current_time) - self.height as f32 * 0.5;
+				eye[2] = camera.eye_z.interpolate(self.current_time);
+
+				m.w_axis = m.x_axis * -eye[0] + m.y_axis * -eye[1] + m.z_axis * -eye[2] + m.w_axis;
 			}
 
 			if let Some(video) = &self.root.layers[selected[2]].try_lock().unwrap().video {
@@ -668,7 +682,7 @@ impl AetSceneNode {
 		let resp = ui.interact(rect, ui.next_auto_id(), egui::Sense::click());
 
 		if ui.ctx().dragged_id().is_none()
-			&& resp.clicked()
+			&& resp.clicked_by(egui::PointerButton::Primary)
 			&& let Some(pointer) = resp.interact_pointer_pos()
 		{
 			let x = (pointer.x - rect.min.x) / rect.width();
@@ -684,6 +698,17 @@ impl AetSceneNode {
 			) {
 				*selected = new_path;
 			}
+		}
+
+		if ui
+			.ctx()
+			.input(|i| i.pointer.middle_down() && i.pointer.delta() != egui::vec2(0.0, 0.0))
+		{
+			let delta = ui.ctx().input(|i| i.pointer.delta());
+			let x = delta.x / rect.width() * self.width as f32;
+			let y = delta.y / rect.height() * self.height as f32;
+			self.pan[0] += x;
+			self.pan[1] += y;
 		}
 	}
 }
@@ -1255,7 +1280,7 @@ impl AetCompNode {
 				calc_mat(&mut m, &mut opacity, video, frame);
 			}
 
-			if opacity <= 0.001 {
+			if opacity <= 0.05 {
 				continue;
 			}
 
@@ -1316,7 +1341,7 @@ impl AetCompNode {
 
 					// Not 100% accurate but good enough for now
 					if (pos[0] > arr[0].x || pos[0] > arr[1].x)
-						&& (pos[0] < arr[2].x || pos[0] > arr[3].x)
+						&& (pos[0] < arr[2].x || pos[0] < arr[3].x)
 						&& (pos[1] > arr[0].y || pos[1] > arr[1].y)
 						&& (pos[1] < arr[2].y || pos[1] < arr[3].y)
 					{
