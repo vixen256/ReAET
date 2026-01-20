@@ -107,6 +107,39 @@ impl Movie {
 				return Err(format!("Failed to open decoder {}", error_to_string(res)));
 			}
 
+			let primaries = match decoder_ctx.read().color_primaries {
+				AVColorPrimaries::AVCOL_PRI_BT470M
+				| AVColorPrimaries::AVCOL_PRI_BT470BG
+				| AVColorPrimaries::AVCOL_PRI_SMPTE170M
+				| AVColorPrimaries::AVCOL_PRI_SMPTE240M => 0,
+				AVColorPrimaries::AVCOL_PRI_BT709 => 1,
+				AVColorPrimaries::AVCOL_PRI_BT2020 => 2,
+				_ => 1,
+			};
+
+			let full = if primaries == 0 {
+				if decoder_ctx.read().color_range == AVColorRange::AVCOL_RANGE_JPEG {
+					1
+				} else {
+					0
+				}
+			} else {
+				if decoder_ctx.read().color_range == AVColorRange::AVCOL_RANGE_MPEG {
+					0
+				} else {
+					1
+				}
+			};
+
+			let (format, depth) = if decoder_ctx.read().pix_fmt == AVPixelFormat::AV_PIX_FMT_YUV420P
+			{
+				(wgpu::TextureFormat::R8Uint, 2u32.pow(8) as f32)
+			} else if decoder_ctx.read().pix_fmt == AVPixelFormat::AV_PIX_FMT_YUV420P10LE {
+				(wgpu::TextureFormat::R16Uint, 2u32.pow(10) as f32)
+			} else {
+				panic!("Unknown pixel format");
+			};
+
 			let device = &render_state.device;
 			let y_texture = device.create_texture(&wgpu::TextureDescriptor {
 				size: wgpu::Extent3d {
@@ -117,7 +150,7 @@ impl Movie {
 				mip_level_count: 1,
 				sample_count: 1,
 				dimension: wgpu::TextureDimension::D2,
-				format: wgpu::TextureFormat::R8Unorm,
+				format,
 				usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
 				label: None,
 				view_formats: &[],
@@ -132,7 +165,7 @@ impl Movie {
 				mip_level_count: 1,
 				sample_count: 1,
 				dimension: wgpu::TextureDimension::D2,
-				format: wgpu::TextureFormat::R8Unorm,
+				format,
 				usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
 				label: None,
 				view_formats: &[],
@@ -147,10 +180,16 @@ impl Movie {
 				mip_level_count: 1,
 				sample_count: 1,
 				dimension: wgpu::TextureDimension::D2,
-				format: wgpu::TextureFormat::R8Unorm,
+				format,
 				usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
 				label: None,
 				view_formats: &[],
+			});
+
+			let video_info = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+				label: Some("Video info buffer"),
+				contents: bytemuck::cast_slice(&[primaries, full, depth.to_bits(), 0]),
+				usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
 			});
 
 			let mut renderer = render_state.renderer.write();
@@ -161,25 +200,25 @@ impl Movie {
 				entries: &[
 					wgpu::BindGroupEntry {
 						binding: 0,
-						resource: wgpu::BindingResource::Sampler(&resources.sampler),
-					},
-					wgpu::BindGroupEntry {
-						binding: 1,
 						resource: wgpu::BindingResource::TextureView(
 							&y_texture.create_view(&wgpu::TextureViewDescriptor::default()),
 						),
 					},
 					wgpu::BindGroupEntry {
-						binding: 2,
+						binding: 1,
 						resource: wgpu::BindingResource::TextureView(
 							&cb_texture.create_view(&wgpu::TextureViewDescriptor::default()),
 						),
 					},
 					wgpu::BindGroupEntry {
-						binding: 3,
+						binding: 2,
 						resource: wgpu::BindingResource::TextureView(
 							&cr_texture.create_view(&wgpu::TextureViewDescriptor::default()),
 						),
+					},
+					wgpu::BindGroupEntry {
+						binding: 3,
+						resource: video_info.as_entire_binding(),
 					},
 				],
 				label: Some("Movie bind group"),
@@ -206,7 +245,7 @@ impl Movie {
 
 	pub fn get_frame(&mut self, ui: &mut egui::Ui, time: f64) -> Option<&MovieFrame> {
 		unsafe {
-			if time < 0.0
+			if time <= 0.0
 				|| time + 0.1 >= self.input_ctx.read().duration as f64 * av_q2d(AV_TIME_BASE_Q)
 			{
 				return None;
@@ -239,11 +278,10 @@ impl Movie {
 			self.buffered_frames
 				.retain_mut(|frame| frame.time + 1.0 >= time && frame.time - 1.0 <= time);
 
-			for _ in 0..10 {
+			for _ in 0..20 {
 				let mut packet = av_packet_alloc();
 				let res = av_read_frame(self.input_ctx, packet);
 				if res < 0 {
-					dbg!(error_to_string(res));
 					av_packet_free(&mut packet);
 					return None;
 				}
@@ -254,7 +292,6 @@ impl Movie {
 
 				let res = avcodec_send_packet(self.decoder_ctx, packet);
 				if res < 0 && res != AVERROR(EAGAIN) {
-					dbg!(error_to_string(res));
 					av_packet_free(&mut packet);
 					return None;
 				}
@@ -265,10 +302,8 @@ impl Movie {
 				if res < 0 {
 					av_frame_free(&mut frame);
 					if res == AVERROR(EAGAIN) {
-						dbg!(error_to_string(res));
 						continue;
 					} else {
-						dbg!(error_to_string(res));
 						return None;
 					}
 				}
@@ -324,7 +359,6 @@ pub struct WgpuMovie {
 }
 
 pub struct WgpuResources {
-	pub sampler: wgpu::Sampler,
 	pub bind_group_layout: wgpu::BindGroupLayout,
 	pub pipeline: wgpu::RenderPipeline,
 	pub vertex_buffer: wgpu::Buffer,
@@ -346,7 +380,11 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 			wgpu::BindGroupLayoutEntry {
 				binding: 0,
 				visibility: wgpu::ShaderStages::FRAGMENT,
-				ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+				ty: wgpu::BindingType::Texture {
+					multisampled: false,
+					view_dimension: wgpu::TextureViewDimension::D2,
+					sample_type: wgpu::TextureSampleType::Uint,
+				},
 				count: None,
 			},
 			wgpu::BindGroupLayoutEntry {
@@ -355,7 +393,7 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 				ty: wgpu::BindingType::Texture {
 					multisampled: false,
 					view_dimension: wgpu::TextureViewDimension::D2,
-					sample_type: wgpu::TextureSampleType::Float { filterable: true },
+					sample_type: wgpu::TextureSampleType::Uint,
 				},
 				count: None,
 			},
@@ -365,17 +403,17 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 				ty: wgpu::BindingType::Texture {
 					multisampled: false,
 					view_dimension: wgpu::TextureViewDimension::D2,
-					sample_type: wgpu::TextureSampleType::Float { filterable: true },
+					sample_type: wgpu::TextureSampleType::Uint,
 				},
 				count: None,
 			},
 			wgpu::BindGroupLayoutEntry {
 				binding: 3,
 				visibility: wgpu::ShaderStages::FRAGMENT,
-				ty: wgpu::BindingType::Texture {
-					multisampled: false,
-					view_dimension: wgpu::TextureViewDimension::D2,
-					sample_type: wgpu::TextureSampleType::Float { filterable: true },
+				ty: wgpu::BindingType::Buffer {
+					ty: wgpu::BufferBindingType::Uniform,
+					has_dynamic_offset: false,
+					min_binding_size: None,
 				},
 				count: None,
 			},
@@ -478,18 +516,11 @@ pub fn setup_wgpu(render_state: &egui_wgpu::RenderState) {
 		usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX,
 	});
 
-	let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-		mag_filter: wgpu::FilterMode::Linear,
-		min_filter: wgpu::FilterMode::Linear,
-		..Default::default()
-	});
-
 	render_state
 		.renderer
 		.write()
 		.callback_resources
 		.insert(WgpuResources {
-			sampler,
 			bind_group_layout,
 			pipeline,
 			vertex_buffer,
