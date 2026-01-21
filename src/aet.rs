@@ -139,6 +139,7 @@ impl AetSetNode {
 					selected_curve: None,
 					gizmo: Gizmo::default(),
 					pan: [0.0, 0.0],
+					zoom: 1.0,
 
 					background_movie: None,
 					error: None,
@@ -176,6 +177,7 @@ pub struct AetSceneNode {
 	pub selected_curve: Option<CurveType>,
 	pub gizmo: Gizmo,
 	pub pan: [f32; 2],
+	pub zoom: f32,
 
 	pub background_movie: Option<crate::movie::Movie>,
 	pub error: Option<String>,
@@ -338,6 +340,10 @@ impl TreeNode for AetSceneNode {
 			crate::app::num_edit(ui, &mut self.pan[1], 0);
 			ui.end_row();
 
+			ui.label("Zoom");
+			crate::app::num_edit(ui, &mut self.zoom, 2);
+			ui.end_row();
+
 			if ui.button("Background Movie").clicked() {
 				async {
 					let Some(file) = rfd::AsyncFileDialog::new()
@@ -420,6 +426,8 @@ impl AetSceneNode {
 		let mut mat = Mat4::IDENTITY;
 		mat.w_axis.x = self.pan[0];
 		mat.w_axis.y = self.pan[1];
+		mat.x_axis.x = self.zoom;
+		mat.y_axis.y = self.zoom;
 
 		if let Some(camera) = &self.camera {
 			let mut eye = [0.0; 3];
@@ -476,6 +484,8 @@ impl AetSceneNode {
 			let mut opacity = 0.0;
 			m.w_axis.x = self.pan[0];
 			m.w_axis.y = self.pan[1];
+			mat.x_axis.x = self.zoom;
+			mat.y_axis.y = self.zoom;
 
 			if let Some(camera) = &self.camera {
 				let mut eye = [0.0; 3];
@@ -685,8 +695,8 @@ impl AetSceneNode {
 			&& resp.clicked_by(egui::PointerButton::Primary)
 			&& let Some(pointer) = resp.interact_pointer_pos()
 		{
-			let x = (pointer.x - rect.min.x) / rect.width();
-			let y = (pointer.y - rect.min.y) / rect.height();
+			let x = (pointer.x - resp.rect.min.x) / rect.width();
+			let y = (pointer.y - resp.rect.min.y) / rect.height();
 			if let Some(new_path) = self.root.clicked(
 				mat,
 				self.current_time,
@@ -709,6 +719,19 @@ impl AetSceneNode {
 			let y = delta.y / rect.height() * self.height as f32;
 			self.pan[0] += x;
 			self.pan[1] += y;
+		}
+
+		let zoom = ui.ctx().input(|i| i.zoom_delta()) - 1.0;
+		self.zoom = (self.zoom + zoom).clamp(0.1, 5.0);
+		if zoom != 0.0
+			&& self.zoom != 0.1
+			&& self.zoom != 5.0
+			&& let Some(pointer) = resp.hover_pos()
+		{
+			let x = (pointer.x - resp.rect.min.x) / rect.width() * self.width as f32;
+			let y = (pointer.y - resp.rect.min.y) / rect.height() * self.height as f32;
+			self.pan[0] -= x * zoom;
+			self.pan[1] -= y * zoom;
 		}
 	}
 }

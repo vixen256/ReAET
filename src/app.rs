@@ -1711,7 +1711,7 @@ impl eframe::App for App {
 									show_node_opts(ui, node, 2, 0, &[], &self.selected, frame);
 								}
 							});
-							ui.take_available_space();
+							ui.take_available_height();
 						});
 				}
 
@@ -1884,8 +1884,6 @@ impl eframe::App for App {
 							);
 						}
 					}
-
-					ui.take_available_space();
 				});
 
 				ui.take_available_space();
