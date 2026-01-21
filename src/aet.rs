@@ -721,17 +721,17 @@ impl AetSceneNode {
 			self.pan[1] += y;
 		}
 
-		let zoom = ui.ctx().input(|i| i.zoom_delta()) - 1.0;
-		self.zoom = (self.zoom + zoom).clamp(0.1, 5.0);
-		if zoom != 0.0
-			&& self.zoom != 0.1
-			&& self.zoom != 5.0
-			&& let Some(pointer) = resp.hover_pos()
+		if let Some(pointer) = resp.hover_pos()
+			&& resp.rect.contains(pointer)
 		{
-			let x = (pointer.x - resp.rect.min.x) / rect.width() * self.width as f32;
-			let y = (pointer.y - resp.rect.min.y) / rect.height() * self.height as f32;
-			self.pan[0] -= x * zoom;
-			self.pan[1] -= y * zoom;
+			let zoom = ui.ctx().input(|i| i.zoom_delta()) - 1.0;
+			self.zoom = (self.zoom + zoom).clamp(0.1, 5.0);
+			if zoom != 0.0 && self.zoom != 0.1 && self.zoom != 5.0 {
+				let x = (pointer.x - resp.rect.min.x) / rect.width() * self.width as f32;
+				let y = (pointer.y - resp.rect.min.y) / rect.height() * self.height as f32;
+				self.pan[0] -= x * zoom;
+				self.pan[1] -= y * zoom;
+			}
 		}
 	}
 }
