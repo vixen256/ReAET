@@ -475,6 +475,74 @@ impl AetSceneNode {
 			selected,
 		);
 
+		let top = Mat4::from_cols(
+			Vec4::new(self.width as f32 + 10.0, 0.0, 0.0, 0.0),
+			Vec4::new(0.0, 5.0, 0.0, 0.0),
+			Vec4::new(0.0, 0.0, 1.0, 0.0),
+			Vec4::new(-5.0, -5.0, 0.0, 1.0),
+		);
+		videos.videos.push(WgpuAetVideo {
+			has_matte: false,
+			is_empty: true,
+			source_size: [1.0, 1.0],
+			sprite_id: 0,
+			matte_sprite_index: 0,
+			mat: mat * top,
+			color: [0.0, 0.0, 0.75, 1.0],
+			blend_mode: aet::BlendMode::Add,
+		});
+
+		let bottom = Mat4::from_cols(
+			Vec4::new(self.width as f32 + 10.0, 0.0, 0.0, 0.0),
+			Vec4::new(0.0, 5.0, 0.0, 0.0),
+			Vec4::new(0.0, 0.0, 1.0, 0.0),
+			Vec4::new(-5.0, self.height as f32, 0.0, 1.0),
+		);
+		videos.videos.push(WgpuAetVideo {
+			has_matte: false,
+			is_empty: true,
+			source_size: [1.0, 1.0],
+			sprite_id: 0,
+			matte_sprite_index: 0,
+			mat: mat * bottom,
+			color: [0.0, 0.0, 0.75, 1.0],
+			blend_mode: aet::BlendMode::Add,
+		});
+
+		let left = Mat4::from_cols(
+			Vec4::new(5.0, 0.0, 0.0, 0.0),
+			Vec4::new(0.0, self.height as f32 + 10.0, 0.0, 0.0),
+			Vec4::new(0.0, 0.0, 1.0, 0.0),
+			Vec4::new(-5.0, -5.0, 0.0, 1.0),
+		);
+		videos.videos.push(WgpuAetVideo {
+			has_matte: false,
+			is_empty: true,
+			source_size: [1.0, 1.0],
+			sprite_id: 0,
+			matte_sprite_index: 0,
+			mat: mat * left,
+			color: [0.0, 0.0, 0.75, 1.0],
+			blend_mode: aet::BlendMode::Add,
+		});
+
+		let right = Mat4::from_cols(
+			Vec4::new(5.0, 0.0, 0.0, 0.0),
+			Vec4::new(0.0, self.height as f32 + 10.0, 0.0, 0.0),
+			Vec4::new(0.0, 0.0, 1.0, 0.0),
+			Vec4::new(self.width as f32, -5.0, 0.0, 1.0),
+		);
+		videos.videos.push(WgpuAetVideo {
+			has_matte: false,
+			is_empty: true,
+			source_size: [1.0, 1.0],
+			sprite_id: 0,
+			matte_sprite_index: 0,
+			mat: mat * right,
+			color: [0.0, 0.0, 0.75, 1.0],
+			blend_mode: aet::BlendMode::Add,
+		});
+
 		ui.painter()
 			.add(egui_wgpu::Callback::new_paint_callback(rect, videos));
 
@@ -710,11 +778,8 @@ impl AetSceneNode {
 			}
 		}
 
-		if ui
-			.ctx()
-			.input(|i| i.pointer.middle_down() && i.pointer.delta() != egui::vec2(0.0, 0.0))
-		{
-			let delta = ui.ctx().input(|i| i.pointer.delta());
+		if ui.input(|i| i.pointer.middle_down() && i.pointer.delta() != egui::vec2(0.0, 0.0)) {
+			let delta = ui.input(|i| i.pointer.delta());
 			let x = delta.x / rect.width() * self.width as f32;
 			let y = delta.y / rect.height() * self.height as f32;
 			self.pan[0] += x;
@@ -724,13 +789,24 @@ impl AetSceneNode {
 		if let Some(pointer) = resp.hover_pos()
 			&& resp.rect.contains(pointer)
 		{
-			let zoom = ui.ctx().input(|i| i.zoom_delta()) - 1.0;
+			let zoom = ui.input(|i| i.zoom_delta()) - 1.0;
 			self.zoom = (self.zoom + zoom).clamp(0.1, 5.0);
 			if zoom != 0.0 && self.zoom != 0.1 && self.zoom != 5.0 {
 				let x = (pointer.x - resp.rect.min.x) / rect.width() * self.width as f32;
 				let y = (pointer.y - resp.rect.min.y) / rect.height() * self.height as f32;
 				self.pan[0] -= x * zoom;
 				self.pan[1] -= y * zoom;
+			}
+
+			if ui.input_mut(|i| {
+				i.consume_shortcut(&egui::KeyboardShortcut {
+					modifiers: egui::Modifiers::COMMAND,
+					logical_key: egui::Key::R,
+				})
+			}) {
+				self.pan[0] = 0.0;
+				self.pan[1] = 0.0;
+				self.zoom = 1.0;
 			}
 		}
 	}
