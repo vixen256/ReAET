@@ -587,7 +587,7 @@ impl SpriteInfoNode {
 			|| new_image.height() != self.info.height() as u32
 		{
 			self.error = Some(String::from(
-				"New image did match dimensions of current sprite",
+				"New image did not match dimensions of current sprite",
 			));
 			return;
 		}

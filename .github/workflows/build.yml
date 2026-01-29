@@ -35,8 +35,8 @@ jobs:
           $env:LDFLAGS="/clang:-flto=thin /clang:-fuse-ld=lld-link"
           $env:AR="llvm-lib"
 
-          rustup toolchain install nightly
-          rustup override set nightly
+          rustup toolchain install nightly-2026-01-16
+          rustup override set nightly-2026-01-16
           rustup component add rust-src
 
           $env:RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Ctarget-feature=+crt-static -Clinker-plugin-lto -Clinker=lld-link"
@@ -134,8 +134,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install libglib2.0-dev libatk1.0-dev libgtk-3-dev nasm clang-21 lld-21
 
-          rustup toolchain install nightly
-          rustup override set nightly
+          rustup toolchain install nightly-2026-01-16
+          rustup override set nightly-2026-01-16
           rustup component add rust-src
 
           export RUSTFLAGS="-Ctarget-cpu=x86-64-v3 -Clinker-plugin-lto -Clinker=clang-21 -Clink-arg=-fuse-ld=lld"
