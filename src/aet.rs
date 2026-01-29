@@ -467,7 +467,7 @@ impl AetSceneNode {
 
 		self.root.display(
 			mat,
-			self.current_time,
+			self.current_time - self.start_time,
 			1.0,
 			self.display_placeholders,
 			&mut videos,
