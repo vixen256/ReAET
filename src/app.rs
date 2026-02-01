@@ -726,7 +726,7 @@ impl App {
 			let mut spr_set_farc = false;
 			let mut aet_set_farc = false;
 			for file in farc.files() {
-				if (name.starts_with("spr") && ext == "bin") || ext == "spr" {
+				if (name.starts_with("spr_") && ext == "bin") || ext == "spr" {
 					let spr_set =
 						spr::SpriteSetNode::read(&file.name(), file.data().unwrap_or_default());
 					if spr_set.modern {
@@ -1884,9 +1884,9 @@ impl eframe::App for App {
 							);
 						}
 					}
-				});
 
-				ui.take_available_space();
+					ui.set_min_width(ui.available_width() - 1.0);
+				});
 			});
 
 		egui::TopBottomPanel::bottom("CurveEditor")

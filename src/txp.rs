@@ -184,7 +184,7 @@ pub struct TextureNode {
 }
 
 impl TextureNode {
-	fn pick_file(&mut self, path: &std::path::PathBuf, data: &[u8], frame: &mut eframe::Frame) {
+	fn pick_file(&mut self, path: &std::path::PathBuf, data: &[u8]) {
 		let extension = path.extension().unwrap_or_default();
 		let Some(format) = image::ImageFormat::from_extension(extension) else {
 			self.error = Some(format!("Could not determine format of {:?}", path));
@@ -199,13 +199,10 @@ impl TextureNode {
 		};
 
 		if self.texture.is_ycbcr() {
-			let render_state = &frame.wgpu_render_state().unwrap();
 			let Some(texture) = txp::Texture::encode_ycbcr(
 				image.width(),
 				image.height(),
 				image.flipv().to_rgba8().as_bytes(),
-				&render_state.device,
-				&render_state.queue,
 			) else {
 				self.error = Some(String::from("Could not encode image"));
 				return;
@@ -231,8 +228,7 @@ impl TextureNode {
 					break;
 				}
 
-				let render_state = &frame.wgpu_render_state().unwrap();
-				let Some(mipmap) = txp::Mipmap::from_rgba_gpu(
+				let Some(mipmap) = txp::Mipmap::from_rgba(
 					width as i32,
 					height as i32,
 					image
@@ -241,8 +237,6 @@ impl TextureNode {
 						.to_rgba8()
 						.as_bytes(),
 					mip.format(),
-					&render_state.device,
-					&render_state.queue,
 				) else {
 					self.error = Some(String::from("Could not encode image"));
 					return;
@@ -257,17 +251,8 @@ impl TextureNode {
 
 	fn export(&mut self) {
 		async {
-			let (filter_name, filter) = if cfg!(feature = "bc6h") {
-				(
-					"Images (.avif, .bmp, .png, .webp)",
-					vec!["avif", "bmp", "png", "webp"],
-				)
-			} else {
-				("Images (.bmp, .png, .webp)", vec!["bmp", "png", "webp"])
-			};
-
 			let Some(file) = rfd::AsyncFileDialog::new()
-				.add_filter(filter_name, &filter)
+				.add_filter("Images (.bmp, .png, .webp)", &["bmp", "png", "webp"])
 				.set_file_name(format!("{}.png", self.name))
 				.save_file()
 				.await
@@ -316,19 +301,10 @@ impl TextureNode {
 		.block_on();
 	}
 
-	fn replace(&mut self, frame: &mut eframe::Frame) {
+	fn replace(&mut self) {
 		async {
-			let (filter_name, filter) = if cfg!(feature = "bc6h") {
-				(
-					"Images (.avif, .bmp, .png, .webp)",
-					vec!["avif", "bmp", "png", "webp"],
-				)
-			} else {
-				("Images (.bmp, .png, .webp)", vec!["bmp", "png", "webp"])
-			};
-
 			let Some(file) = rfd::AsyncFileDialog::new()
-				.add_filter(filter_name, &filter)
+				.add_filter("Images (.bmp, .png, .webp)", &["bmp", "png", "webp"])
 				.set_file_name(&self.name)
 				.pick_file()
 				.await
@@ -336,7 +312,7 @@ impl TextureNode {
 				return;
 			};
 
-			self.pick_file(&file.path().to_path_buf(), &file.read().await, frame);
+			self.pick_file(&file.path().to_path_buf(), &file.read().await);
 		}
 		.block_on();
 	}
@@ -373,7 +349,7 @@ impl TextureNode {
 			.unwrap();
 	}
 
-	fn paste(&mut self, frame: &mut eframe::Frame) {
+	fn paste(&mut self) {
 		let Ok(image) = arboard::Clipboard::new().unwrap().get_image() else {
 			self.error = Some(String::from("Could not find image data on clipboard"));
 			return;
@@ -389,13 +365,10 @@ impl TextureNode {
 		let image = image::DynamicImage::ImageRgba8(image);
 
 		if self.texture.is_ycbcr() {
-			let render_state = &frame.wgpu_render_state().unwrap();
 			let Some(texture) = txp::Texture::encode_ycbcr(
 				image.width(),
 				image.height(),
 				image.flipv().to_rgba8().as_bytes(),
-				&render_state.device,
-				&render_state.queue,
 			) else {
 				self.error = Some(String::from("Could not encode image"));
 				return;
@@ -421,8 +394,7 @@ impl TextureNode {
 					break;
 				}
 
-				let render_state = &frame.wgpu_render_state().unwrap();
-				let Some(mipmap) = txp::Mipmap::from_rgba_gpu(
+				let Some(mipmap) = txp::Mipmap::from_rgba(
 					width as i32,
 					height as i32,
 					image
@@ -431,8 +403,6 @@ impl TextureNode {
 						.to_rgba8()
 						.as_bytes(),
 					self.texture.get_mipmap(0, i).unwrap().format(),
-					&render_state.device,
-					&render_state.queue,
 				) else {
 					self.error = Some(String::from("Could not encode image"));
 					return;
@@ -455,7 +425,7 @@ impl TreeNode for TextureNode {
 		true
 	}
 
-	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if ui
 			.add(
 				egui::Button::new("Export")
@@ -473,7 +443,7 @@ impl TreeNode for TextureNode {
 			)
 			.clicked()
 		{
-			self.replace(frame);
+			self.replace();
 		}
 
 		if ui
@@ -501,7 +471,7 @@ impl TreeNode for TextureNode {
 			)
 			.clicked()
 		{
-			self.paste(frame);
+			self.paste();
 		}
 
 		if ui.button("Remove").clicked() {
@@ -509,7 +479,7 @@ impl TreeNode for TextureNode {
 		}
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if let Some(error) = &self.error {
 			let modal = egui::Modal::new(egui::Id::new("SpriteInfoError")).show(ui.ctx(), |ui| {
 				ui.heading("An error has occured");
@@ -529,7 +499,7 @@ impl TreeNode for TextureNode {
 		if ui.input_mut(|i| i.consume_shortcut(&EXPORT_SHORTCUT)) {
 			self.export();
 		} else if ui.input_mut(|i| i.consume_shortcut(&REPLACE_SHORTCUT)) {
-			self.replace(frame);
+			self.replace();
 		} else if ui.memory(|mem| mem.focused().is_none())
 			&& ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy)))
 		{
@@ -547,7 +517,7 @@ impl TreeNode for TextureNode {
 					_ => false,
 				})
 			}) {
-			self.paste(frame);
+			self.paste();
 		}
 
 		let mip = self.texture.get_mipmap(0, 0).unwrap();
@@ -592,7 +562,6 @@ impl TreeNode for TextureNode {
 					ui.selectable_value(&mut format, txp::Format::RGBA4 as u32, "RGBA4");
 					ui.selectable_value(&mut format, txp::Format::BC1 as u32, "BC1 (RGB)");
 					ui.selectable_value(&mut format, txp::Format::BC1a as u32, "BC1 (RGBA)");
-					ui.selectable_value(&mut format, txp::Format::BC2 as u32, "BC2");
 					ui.selectable_value(&mut format, txp::Format::BC3 as u32, "BC3");
 					ui.selectable_value(&mut format, txp::Format::BC4 as u32, "BC4 (R)");
 					ui.selectable_value(&mut format, txp::Format::BC5 as u32, "BC5 (RG)");
@@ -600,22 +569,15 @@ impl TreeNode for TextureNode {
 					ui.selectable_value(&mut format, txp::Format::L8 as u32, "L8");
 					ui.selectable_value(&mut format, txp::Format::L8A8 as u32, "L8A8");
 					ui.selectable_value(&mut format, txp::Format::BC7 as u32, "BC7");
-					#[cfg(feature = "bc6h")]
-					ui.selectable_value(&mut format, txp::Format::BC6H as u32, "BC6H");
 				});
 
 			if format != old_format {
 				if old_format == 0x90 {
 					let rgba = self.texture.decode_ycbcr().unwrap_or_default();
-					let render_state = &frame.wgpu_render_state().unwrap();
-					if let Some(mip) = txp::Mipmap::from_rgba_gpu(
-						mip.width(),
-						mip.height(),
-						&rgba,
-						unsafe { std::mem::transmute(format) },
-						&render_state.device,
-						&render_state.queue,
-					) {
+					if let Some(mip) =
+						txp::Mipmap::from_rgba(mip.width(), mip.height(), &rgba, unsafe {
+							std::mem::transmute(format)
+						}) {
 						let mut tex = txp::Texture::new();
 						tex.set_has_cube_map(false);
 						tex.set_array_size(1);
@@ -624,17 +586,9 @@ impl TreeNode for TextureNode {
 						replacement_texture = Some(tex);
 					}
 				} else if format == 0x90 {
-					let render_state = &frame.wgpu_render_state().unwrap();
-					let rgba = mip
-						.to_rgba_gpu(&render_state.device, &render_state.queue)
-						.unwrap_or_default();
-					replacement_texture = txp::Texture::encode_ycbcr(
-						mip.width() as u32,
-						mip.height() as u32,
-						&rgba,
-						&render_state.device,
-						&render_state.queue,
-					);
+					let rgba = mip.rgba().unwrap_or_default();
+					replacement_texture =
+						txp::Texture::encode_ycbcr(mip.width() as u32, mip.height() as u32, &rgba);
 				} else {
 					let mut tex = txp::Texture::new();
 					tex.set_has_cube_map(self.texture.has_cube_map());
@@ -644,18 +598,11 @@ impl TreeNode for TextureNode {
 						if mip.width() < 4 || mip.height() < 4 {
 							break;
 						}
-						let render_state = &frame.wgpu_render_state().unwrap();
-						let rgba = mip
-							.to_rgba_gpu(&render_state.device, &render_state.queue)
-							.unwrap_or_default();
-						if let Some(mip) = txp::Mipmap::from_rgba_gpu(
-							mip.width(),
-							mip.height(),
-							&rgba,
-							unsafe { std::mem::transmute(format) },
-							&render_state.device,
-							&render_state.queue,
-						) {
+						let rgba = mip.rgba().unwrap_or_default();
+						if let Some(mip) =
+							txp::Mipmap::from_rgba(mip.width(), mip.height(), &rgba, unsafe {
+								std::mem::transmute(format)
+							}) {
 							tex.add_mipmap(&mip);
 						}
 					}

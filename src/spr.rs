@@ -282,7 +282,6 @@ impl SpriteSetNode {
 				kkdlib::txp::Format::BC4 => wgpu::TextureFormat::Bc4RSnorm,
 				kkdlib::txp::Format::BC5 => wgpu::TextureFormat::Bc5RgUnorm,
 				kkdlib::txp::Format::BC7 => wgpu::TextureFormat::Bc7RgbaUnorm,
-				#[cfg(feature = "bc6h")]
 				kkdlib::txp::Format::BC6H => wgpu::TextureFormat::Bc6hRgbUfloat,
 			};
 
@@ -568,7 +567,7 @@ pub struct SpriteInfoNode {
 }
 
 impl SpriteInfoNode {
-	fn pick_file(&mut self, path: &std::path::PathBuf, data: &[u8], frame: &mut eframe::Frame) {
+	fn pick_file(&mut self, path: &std::path::PathBuf, data: &[u8]) {
 		let extension = path.extension().unwrap_or_default();
 		let Some(format) = image::ImageFormat::from_extension(extension) else {
 			self.error = Some(format!("Could not determine format of {:?}", path));
@@ -595,8 +594,7 @@ impl SpriteInfoNode {
 		let rgba = if texture.texture.is_ycbcr() {
 			texture.texture.decode_ycbcr()
 		} else {
-			let render_state = &frame.wgpu_render_state().unwrap();
-			mip.to_rgba_gpu(&render_state.device, &render_state.queue)
+			mip.rgba()
 		};
 		let Some(rgba) = rgba else {
 			self.error = Some(String::from("Failed to convert current texture to RGBA"));
@@ -619,28 +617,20 @@ impl SpriteInfoNode {
 		}
 
 		if texture.texture.is_ycbcr() {
-			let render_state = &frame.wgpu_render_state().unwrap();
-			let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
-				image.width(),
-				image.height(),
-				image.as_bytes(),
-				&render_state.device,
-				&render_state.queue,
-			) else {
+			let Some(tex) =
+				kkdlib::txp::Texture::encode_ycbcr(image.width(), image.height(), image.as_bytes())
+			else {
 				self.error = Some(String::from("Could not encode image"));
 				return;
 			};
 			texture.texture = tex;
 			texture.texture_updated = true;
 		} else {
-			let render_state = &frame.wgpu_render_state().unwrap();
-			let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
+			let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba(
 				image.width() as i32,
 				image.height() as i32,
 				image.as_bytes(),
 				mip.format(),
-				&render_state.device,
-				&render_state.queue,
 			) else {
 				self.error = Some(String::from("Could not encode texture"));
 				return;
@@ -658,17 +648,8 @@ impl SpriteInfoNode {
 
 	fn export(&mut self) {
 		async {
-			let (filter_name, filter) = if cfg!(feature = "bc6h") {
-				(
-					"Images (.avif, .bmp, .png, .webp)",
-					vec!["avif", "bmp", "png", "webp"],
-				)
-			} else {
-				("Images (.bmp, .png, .webp)", vec!["bmp", "png", "webp"])
-			};
-
 			let Some(file) = rfd::AsyncFileDialog::new()
-				.add_filter(filter_name, &filter)
+				.add_filter("Images (.bmp, .png, .webp)", &["bmp", "png", "webp"])
 				.set_file_name(format!("{}.png", self.name))
 				.save_file()
 				.await
@@ -725,19 +706,10 @@ impl SpriteInfoNode {
 		.block_on();
 	}
 
-	fn replace(&mut self, frame: &mut eframe::Frame) {
+	fn replace(&mut self) {
 		async {
-			let (filter_name, filter) = if cfg!(feature = "bc6h") {
-				(
-					"Images (.avif, .bmp, .png, .webp)",
-					vec!["avif", "bmp", "png", "webp"],
-				)
-			} else {
-				("Images (.bmp, .png, .webp)", vec!["bmp", "png", "webp"])
-			};
-
 			let Some(file) = rfd::AsyncFileDialog::new()
-				.add_filter(filter_name, &filter)
+				.add_filter("Images (.bmp, .png, .webp)", &["bmp", "png", "webp"])
 				.set_file_name(&self.name)
 				.pick_file()
 				.await
@@ -745,7 +717,7 @@ impl SpriteInfoNode {
 				return;
 			};
 
-			self.pick_file(&file.path().to_path_buf(), &file.read().await, frame);
+			self.pick_file(&file.path().to_path_buf(), &file.read().await);
 		}
 		.block_on();
 	}
@@ -790,7 +762,7 @@ impl SpriteInfoNode {
 			.unwrap();
 	}
 
-	fn paste(&mut self, frame: &mut eframe::Frame) {
+	fn paste(&mut self) {
 		let Ok(new_image) = arboard::Clipboard::new().unwrap().get_image() else {
 			self.error = Some(String::from("Could not find image data on clipboard"));
 			return;
@@ -817,8 +789,7 @@ impl SpriteInfoNode {
 		let rgba = if texture.texture.is_ycbcr() {
 			texture.texture.decode_ycbcr()
 		} else {
-			let render_state = &frame.wgpu_render_state().unwrap();
-			mip.to_rgba_gpu(&render_state.device, &render_state.queue)
+			mip.rgba()
 		};
 		let Some(rgba) = rgba else {
 			self.error = Some(String::from("Failed to convert current texture to RGBA"));
@@ -841,28 +812,20 @@ impl SpriteInfoNode {
 		}
 
 		if texture.texture.is_ycbcr() {
-			let render_state = &frame.wgpu_render_state().unwrap();
-			let Some(tex) = kkdlib::txp::Texture::encode_ycbcr(
-				image.width(),
-				image.height(),
-				image.as_bytes(),
-				&render_state.device,
-				&render_state.queue,
-			) else {
+			let Some(tex) =
+				kkdlib::txp::Texture::encode_ycbcr(image.width(), image.height(), image.as_bytes())
+			else {
 				self.error = Some(String::from("Could not encode image"));
 				return;
 			};
 			texture.texture = tex;
 			texture.texture_updated = true;
 		} else {
-			let render_state = &frame.wgpu_render_state().unwrap();
-			let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba_gpu(
+			let Some(mipmap) = kkdlib::txp::Mipmap::from_rgba(
 				image.width() as i32,
 				image.height() as i32,
 				image.as_bytes(),
 				mip.format(),
-				&render_state.device,
-				&render_state.queue,
 			) else {
 				self.error = Some(String::from("Could not encode texture"));
 				return;
@@ -888,7 +851,7 @@ impl TreeNode for SpriteInfoNode {
 		true
 	}
 
-	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+	fn display_ctx_menu(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if ui
 			.add(
 				egui::Button::new("Export")
@@ -906,7 +869,7 @@ impl TreeNode for SpriteInfoNode {
 			)
 			.clicked()
 		{
-			self.replace(frame);
+			self.replace();
 		}
 
 		if ui
@@ -934,7 +897,7 @@ impl TreeNode for SpriteInfoNode {
 			)
 			.clicked()
 		{
-			self.paste(frame);
+			self.paste();
 		}
 
 		if ui.button("Remove").clicked() {
@@ -942,7 +905,7 @@ impl TreeNode for SpriteInfoNode {
 		}
 	}
 
-	fn display_opts(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+	fn display_opts(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		if let Some(error) = &self.error {
 			let modal = egui::Modal::new(egui::Id::new("SpriteInfoError")).show(ui.ctx(), |ui| {
 				ui.heading("An error has occured");
@@ -962,7 +925,7 @@ impl TreeNode for SpriteInfoNode {
 		if ui.input_mut(|i| i.consume_shortcut(&EXPORT_SHORTCUT)) {
 			self.export();
 		} else if ui.input_mut(|i| i.consume_shortcut(&REPLACE_SHORTCUT)) {
-			self.replace(frame);
+			self.replace();
 		} else if ui.memory(|mem| mem.focused().is_none())
 			&& ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy)))
 		{
@@ -980,7 +943,7 @@ impl TreeNode for SpriteInfoNode {
 					_ => false,
 				})
 			}) {
-			self.paste(frame);
+			self.paste();
 		}
 
 		crate::app::display_grid(ui, |ui| {

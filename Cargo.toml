@@ -21,8 +21,8 @@ serde = { version = "1.0", features = ["derive"] }
 transform-gizmo-egui = "0.8"
 wgpu = { version = "27.0", default-features = false, features = ["gles", "metal", "parking_lot", "std", "vulkan"] }
 
-[features]
-bc6h = ["kkdlib/bc6h", "image/avif", "image/nasm"]
+[build-dependencies]
+cc = "1.2"
 
 [profile.dev.package."*"]
 opt-level = 1
