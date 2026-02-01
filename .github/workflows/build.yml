@@ -19,6 +19,7 @@ jobs:
           choco install msys2
           "C:\tools\msys64\usr\bin" | Out-File -FilePath "$env:GITHUB_PATH" -Append
           C:\tools\msys64\usr\bin\pacman --noconfirm -Sy awk make diffutils base-devel
+          Remove-Item -Path "C:\tools\msys64\usr\bin\link.exe"
 
       - name: Install ISPC
         run: |
