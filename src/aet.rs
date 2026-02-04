@@ -1622,24 +1622,7 @@ impl AetCompNode {
 									children,
 								);
 
-								if ui.available_width() < 5.0 {
-									ui.allocate_at_least(
-										egui::vec2(5.0, 0.0),
-										egui::Sense::empty(),
-									);
-								}
-
-								let rect = egui::Rect {
-									min: resp.rect.min,
-									max: egui::pos2(
-										resp.rect.max.x + ui.available_size().x
-											- ui.spacing().item_spacing.x,
-										resp.rect.min.y
-											+ ui.text_style_height(&egui::TextStyle::Body),
-									),
-								};
-
-								ui.data_mut(|data| data.insert_temp(id, rect));
+								ui.data_mut(|data| data.insert_temp(id, resp.rect));
 
 								last_resp = Some(resp);
 							});
@@ -2267,10 +2250,12 @@ impl TreeNode for AetLayerNode {
 			self.markers.retain_mut(|(name, value)| {
 				let mut want_deletion = false;
 				ui.text_edit_singleline(name);
-				crate::app::num_edit(ui, value, 2);
-				if ui.button(ICON_REMOVE).clicked() {
-					want_deletion = true;
-				}
+				ui.horizontal(|ui| {
+					crate::app::num_edit(ui, value, 2);
+					if ui.button(ICON_REMOVE).clicked() {
+						want_deletion = true;
+					}
+				});
 				ui.end_row();
 				!want_deletion
 			});
@@ -2711,8 +2696,6 @@ impl AetLayerNode {
 							self.selected_key = 0;
 						}
 					}
-
-					ui.take_available_space();
 				});
 			});
 

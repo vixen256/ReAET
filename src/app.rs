@@ -1694,199 +1694,203 @@ impl eframe::App for App {
 					egui::TopBottomPanel::bottom("NodeOptions")
 						.resizable(true)
 						.show_inside(ui, |ui| {
-							egui::ScrollArea::vertical().show(ui, |ui| {
-								if self.selected[0] == 0
-									&& let Some(node) = &mut self.aet_set
-								{
-									show_node_opts(ui, node, 0, 0, &[], &self.selected, frame);
-								}
-								if self.selected[0] == 1
-									&& let Some(node) = &mut self.sprite_set
-								{
-									show_node_opts(ui, node, 1, 0, &[], &self.selected, frame);
-								}
-								if self.selected[0] == 2
-									&& let Some(node) = &mut self.spr_db
-								{
-									show_node_opts(ui, node, 2, 0, &[], &self.selected, frame);
-								}
-							});
-							ui.take_available_height();
+							egui::ScrollArea::vertical()
+								.auto_shrink(false)
+								.show(ui, |ui| {
+									if self.selected[0] == 0
+										&& let Some(node) = &mut self.aet_set
+									{
+										show_node_opts(ui, node, 0, 0, &[], &self.selected, frame);
+									}
+									if self.selected[0] == 1
+										&& let Some(node) = &mut self.sprite_set
+									{
+										show_node_opts(ui, node, 1, 0, &[], &self.selected, frame);
+									}
+									if self.selected[0] == 2
+										&& let Some(node) = &mut self.spr_db
+									{
+										show_node_opts(ui, node, 2, 0, &[], &self.selected, frame);
+									}
+								});
 						});
 				}
 
-				egui::ScrollArea::vertical().show(ui, |ui| {
-					let mut children = Vec::new();
-					if let Some(node) = &mut self.aet_set {
-						let old_selected = self.selected.clone();
+				egui::ScrollArea::vertical()
+					.auto_shrink(false)
+					.show(ui, |ui| {
+						let mut children = Vec::new();
+						if let Some(node) = &mut self.aet_set {
+							let old_selected = self.selected.clone();
 
-						show_node(
-							ui,
-							node,
-							0,
-							&[],
-							&mut self.selected,
-							frame,
-							&mut self.undoer,
-							&mut children,
-						);
+							show_node(
+								ui,
+								node,
+								0,
+								&[],
+								&mut self.selected,
+								frame,
+								&mut self.undoer,
+								&mut children,
+							);
 
-						if self.selected.len() >= 3
-							&& old_selected.len() >= 3
-							&& old_selected[0] == 0
-							&& self.selected != old_selected
-							&& self
-								.selected
-								.iter()
-								.rev()
-								.skip(1)
-								.zip(old_selected.iter().rev().skip(1))
-								.all(|(new, old)| new == old)
-							&& ctx.input(|i| {
-								(i.modifiers.ctrl
-									|| (self.selected[self.selected.len() - 2]
-										== old_selected[old_selected.len() - 2]
-										&& i.modifiers.shift)) && i.pointer.primary_clicked()
-									&& ui.max_rect().contains(i.pointer.interact_pos().unwrap())
-							}) && ctx.dragged_id().is_none()
-						{
-							if self.multi_select.is_empty() {
-								let old_layer = get_selected_layer(node, &old_selected);
-								old_layer.try_lock().unwrap().multi_selected = true;
-								self.multi_select.push(old_layer);
-							}
+							if self.selected.len() >= 3
+								&& old_selected.len() >= 3
+								&& old_selected[0] == 0 && self.selected != old_selected
+								&& self
+									.selected
+									.iter()
+									.rev()
+									.skip(1)
+									.zip(old_selected.iter().rev().skip(1))
+									.all(|(new, old)| new == old)
+								&& ctx.input(|i| {
+									(i.modifiers.ctrl
+										|| (self.selected[self.selected.len() - 2]
+											== old_selected[old_selected.len() - 2]
+											&& i.modifiers.shift)) && i.pointer.primary_clicked()
+										&& ui.max_rect().contains(i.pointer.interact_pos().unwrap())
+								}) && ctx.dragged_id().is_none()
+							{
+								if self.multi_select.is_empty() {
+									let old_layer = get_selected_layer(node, &old_selected);
+									old_layer.try_lock().unwrap().multi_selected = true;
+									self.multi_select.push(old_layer);
+								}
 
-							if ui.ctx().input(|i| i.modifiers.shift) {
-								let diff = self.selected[self.selected.len() - 1] as isize
-									- old_selected[old_selected.len() - 1] as isize;
-								if diff.is_positive() {
-									for i in 1..=diff {
-										let mut path = old_selected.clone();
-										path[old_selected.len() - 1] += i as usize;
-										let new_layer = get_selected_layer(node, &path);
-										if !new_layer.try_lock().unwrap().multi_selected {
-											new_layer.try_lock().unwrap().multi_selected = true;
-											self.multi_select.push(new_layer);
+								if ui.ctx().input(|i| i.modifiers.shift) {
+									let diff = self.selected[self.selected.len() - 1] as isize
+										- old_selected[old_selected.len() - 1] as isize;
+									if diff.is_positive() {
+										for i in 1..=diff {
+											let mut path = old_selected.clone();
+											path[old_selected.len() - 1] += i as usize;
+											let new_layer = get_selected_layer(node, &path);
+											if !new_layer.try_lock().unwrap().multi_selected {
+												new_layer.try_lock().unwrap().multi_selected = true;
+												self.multi_select.push(new_layer);
+											}
+										}
+									} else {
+										for i in diff..0 {
+											let mut path = old_selected.clone();
+											path[old_selected.len() - 1] =
+												(path[old_selected.len() - 1] as isize + i)
+													as usize;
+											let new_layer = get_selected_layer(node, &path);
+											if !new_layer.try_lock().unwrap().multi_selected {
+												new_layer.try_lock().unwrap().multi_selected = true;
+												self.multi_select.push(new_layer);
+											}
 										}
 									}
 								} else {
-									for i in diff..0 {
-										let mut path = old_selected.clone();
-										path[old_selected.len() - 1] =
-											(path[old_selected.len() - 1] as isize + i) as usize;
-										let new_layer = get_selected_layer(node, &path);
-										if !new_layer.try_lock().unwrap().multi_selected {
-											new_layer.try_lock().unwrap().multi_selected = true;
-											self.multi_select.push(new_layer);
-										}
+									let new_layer = get_selected_layer(node, &self.selected);
+									if !new_layer.try_lock().unwrap().multi_selected {
+										new_layer.try_lock().unwrap().multi_selected = true;
+										self.multi_select.push(new_layer);
 									}
 								}
-							} else {
-								let new_layer = get_selected_layer(node, &self.selected);
-								if !new_layer.try_lock().unwrap().multi_selected {
-									new_layer.try_lock().unwrap().multi_selected = true;
-									self.multi_select.push(new_layer);
+							} else if ctx.dragged_id().is_some()
+								|| (ui.ctx().interaction_snapshot(|i| i.clicked.is_some())
+									&& ui.ctx().input(|i| {
+										i.pointer.primary_clicked()
+											&& ui
+												.max_rect()
+												.contains(i.pointer.interact_pos().unwrap())
+									}) && !ui.ctx().is_popup_open())
+							{
+								for layer in &mut self.multi_select {
+									let mut layer = layer.try_lock().unwrap();
+									layer.multi_selected = false;
 								}
+								self.multi_select.clear();
 							}
-						} else if ctx.dragged_id().is_some()
-							|| (ui.ctx().interaction_snapshot(|i| i.clicked.is_some())
-								&& ui.ctx().input(|i| {
-									i.pointer.primary_clicked()
-										&& ui.max_rect().contains(i.pointer.interact_pos().unwrap())
-								}) && !ui.ctx().is_popup_open())
+						}
+
+						if let Some(node) = &mut self.sprite_set {
+							show_node(
+								ui,
+								node,
+								1,
+								&[],
+								&mut self.selected,
+								frame,
+								&mut self.undoer,
+								&mut children,
+							);
+						}
+						if let Some(node) = &mut self.spr_db {
+							show_node(
+								ui,
+								node,
+								2,
+								&[],
+								&mut self.selected,
+								frame,
+								&mut self.undoer,
+								&mut children,
+							);
+						}
+
+						if !self.selected.is_empty()
+							&& ui.memory(|mem| mem.focused().is_none())
+							&& let Some(index) =
+								children.iter().position(|(c, _)| c == &self.selected)
 						{
-							for layer in &mut self.multi_select {
-								let mut layer = layer.try_lock().unwrap();
-								layer.multi_selected = false;
+							if index != 0
+								&& ui.input_mut(|i| {
+									i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
+								}) {
+								let (path, resp) = children[index - 1].clone();
+								self.selected = path;
+								resp.scroll_to_me(None);
+
+								let root = if self.selected[0] == 0 {
+									self.aet_set.as_mut().unwrap() as &mut dyn TreeNode
+								} else if self.selected[0] == 1 {
+									self.sprite_set.as_mut().unwrap() as &mut dyn TreeNode
+								} else if self.selected[0] == 2 {
+									self.spr_db.as_mut().unwrap() as &mut dyn TreeNode
+								} else {
+									unreachable!()
+								};
+								set_node_selected(
+									root,
+									self.selected[0],
+									0,
+									&[],
+									&self.selected,
+									frame,
+								);
+							} else if index != children.len() - 1
+								&& ui.input_mut(|i| {
+									i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)
+								}) {
+								let (path, resp) = children[index + 1].clone();
+								self.selected = path;
+								resp.scroll_to_me(None);
+
+								let root = if self.selected[0] == 0 {
+									self.aet_set.as_mut().unwrap() as &mut dyn TreeNode
+								} else if self.selected[0] == 1 {
+									self.sprite_set.as_mut().unwrap() as &mut dyn TreeNode
+								} else if self.selected[0] == 2 {
+									self.spr_db.as_mut().unwrap() as &mut dyn TreeNode
+								} else {
+									unreachable!()
+								};
+								set_node_selected(
+									root,
+									self.selected[0],
+									0,
+									&[],
+									&self.selected,
+									frame,
+								);
 							}
-							self.multi_select.clear();
 						}
-					}
-
-					if let Some(node) = &mut self.sprite_set {
-						show_node(
-							ui,
-							node,
-							1,
-							&[],
-							&mut self.selected,
-							frame,
-							&mut self.undoer,
-							&mut children,
-						);
-					}
-					if let Some(node) = &mut self.spr_db {
-						show_node(
-							ui,
-							node,
-							2,
-							&[],
-							&mut self.selected,
-							frame,
-							&mut self.undoer,
-							&mut children,
-						);
-					}
-
-					if !self.selected.is_empty()
-						&& ui.memory(|mem| mem.focused().is_none())
-						&& let Some(index) = children.iter().position(|(c, _)| c == &self.selected)
-					{
-						if index != 0
-							&& ui.input_mut(|i| {
-								i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
-							}) {
-							let (path, resp) = children[index - 1].clone();
-							self.selected = path;
-							resp.scroll_to_me(None);
-
-							let root = if self.selected[0] == 0 {
-								self.aet_set.as_mut().unwrap() as &mut dyn TreeNode
-							} else if self.selected[0] == 1 {
-								self.sprite_set.as_mut().unwrap() as &mut dyn TreeNode
-							} else if self.selected[0] == 2 {
-								self.spr_db.as_mut().unwrap() as &mut dyn TreeNode
-							} else {
-								unreachable!()
-							};
-							set_node_selected(
-								root,
-								self.selected[0],
-								0,
-								&[],
-								&self.selected,
-								frame,
-							);
-						} else if index != children.len() - 1
-							&& ui.input_mut(|i| {
-								i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)
-							}) {
-							let (path, resp) = children[index + 1].clone();
-							self.selected = path;
-							resp.scroll_to_me(None);
-
-							let root = if self.selected[0] == 0 {
-								self.aet_set.as_mut().unwrap() as &mut dyn TreeNode
-							} else if self.selected[0] == 1 {
-								self.sprite_set.as_mut().unwrap() as &mut dyn TreeNode
-							} else if self.selected[0] == 2 {
-								self.spr_db.as_mut().unwrap() as &mut dyn TreeNode
-							} else {
-								unreachable!()
-							};
-							set_node_selected(
-								root,
-								self.selected[0],
-								0,
-								&[],
-								&self.selected,
-								frame,
-							);
-						}
-					}
-
-					ui.set_min_width(ui.available_width() - 1.0);
-				});
+					});
 			});
 
 		egui::TopBottomPanel::bottom("CurveEditor")
