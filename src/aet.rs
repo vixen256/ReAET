@@ -552,8 +552,8 @@ impl AetSceneNode {
 			let mut opacity = 0.0;
 			m.w_axis.x = self.pan[0];
 			m.w_axis.y = self.pan[1];
-			mat.x_axis.x = self.zoom;
-			mat.y_axis.y = self.zoom;
+			m.x_axis.x = self.zoom;
+			m.y_axis.y = self.zoom;
 
 			if let Some(camera) = &self.camera {
 				let mut eye = [0.0; 3];
