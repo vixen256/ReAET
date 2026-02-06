@@ -18,7 +18,7 @@ parking_lot = { version = "0.12", features = ["nightly", "hardware-lock-elision"
 pollster = "0.4"
 rfd = "0.17"
 serde = { version = "1.0", features = ["derive"] }
-transform-gizmo-egui = "0.8"
+transform-gizmo-egui = { git = "https://github.com/vixen256/transform-gizmo" }
 wgpu = { version = "27.0", default-features = false, features = ["gles", "metal", "parking_lot", "std", "vulkan"] }
 
 [build-dependencies]
