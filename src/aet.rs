@@ -980,7 +980,11 @@ impl AetCompNode {
 			let layer = layer.try_lock().unwrap();
 			match &layer.item {
 				AetItemNode::None => {}
-				AetItemNode::Video(video) => return video.sources.first().map(|source| source.id),
+				AetItemNode::Video(video) => {
+					if let Some(sprite_id) = video.sources.first().map(|source| source.id) {
+						return Some(sprite_id);
+					}
+				}
 				AetItemNode::Audio(_) => {}
 				AetItemNode::Comp(comp) => {
 					if let Some(sprite_id) = comp.get_sprite_id() {
